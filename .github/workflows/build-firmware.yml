@@ -66,9 +66,11 @@ jobs:
         run: |
           for board in devkitc1 xiao generic; do
             mkdir -p web/firmware/$board
-            cp artifacts/firmware-$board/firmware/build/bootloader/bootloader.bin web/firmware/$board/
-            cp artifacts/firmware-$board/firmware/build/partition_table/partition-table.bin web/firmware/$board/
-            cp artifacts/firmware-$board/firmware/build/keebler.bin web/firmware/$board/
+            # Find the binaries wherever the artifact unpacked them
+            find artifacts/firmware-$board -name "bootloader.bin" -exec cp {} web/firmware/$board/ \;
+            find artifacts/firmware-$board -name "partition-table.bin" -exec cp {} web/firmware/$board/ \;
+            find artifacts/firmware-$board -name "keebler.bin" -exec cp {} web/firmware/$board/ \;
+            ls -lh web/firmware/$board/
           done
 
       - name: Check for changes
