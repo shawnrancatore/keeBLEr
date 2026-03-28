@@ -72,6 +72,8 @@ All three tiers share the same ES module codebase. Each tier loads only the modu
 
 - **Wireless keyboard/mouse** — BLE GATT transport, no USB cable to the controller
 - **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
+- **WiFi BLE-to-HTTP proxy** — the ESP32-S3 bridges BLE to WiFi, letting the browser make HTTP API calls to LAN devices through the keeBLEr device. No Docker or CORS proxy needed. Works from GitHub Pages.
+- **WiFi AP mode** — keeBLEr can create its own WiFi network for devices to join, no existing infrastructure required
 - **Auto-reconnect** — aggressive BLE reconnection, auto-connects to paired devices on page load
 - **Web Serial fallback** — UART transport for development and recovery
 - **Browser-based flasher** — flash firmware from the browser, no toolchain needed
@@ -196,6 +198,7 @@ keebler/
       serial_transport.c/h # UART fallback transport
       protocol.h           # Packet protocol, CRC, frame parser
       board_config.h       # Pin/board abstraction (DevKitC-1, XIAO, generic)
+      wifi_proxy.c/h       # WiFi STA/AP, BLE-to-HTTP proxy, token security
     CMakeLists.txt
     sdkconfig.defaults
   web/
@@ -213,6 +216,7 @@ keebler/
       mouse.js             #   Pointer lock, mouse events
       capture.js           #   HDMI capture, audio, video modes (AV tier)
       c64.js               #   C64 Ultimate integration (64 tier)
+      wifi.js              #   WiFi proxy: scan, connect, BLE-to-HTTP (64 tier)
       init.js              #   Service worker, API checks
     av/                    # keeBLEr AV tier
       index.html
