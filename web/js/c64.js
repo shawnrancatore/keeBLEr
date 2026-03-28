@@ -15,7 +15,7 @@ export const c64 = {
   ip: null,
   password: '',
   connected: false,
-  currentPath: '/SD',
+  currentPath: '/Temp',
   el: {},
 };
 
@@ -143,14 +143,27 @@ export async function c64Connect() {
     const info = await resp.json();
 
     c64.connected = true;
+
+    // Show which transport path is being used
+    let transport;
+    if (wifiProxyAvailable()) {
+      transport = 'via BLE WiFi proxy';
+    } else if (c64HasProxy()) {
+      transport = 'via local proxy';
+    } else {
+      transport = 'direct';
+    }
+
+    const product = info.product || 'C64 Ultimate';
+    const fw = info.firmware_version || '?';
     if (c64.el.statusText) {
-      c64.el.statusText.textContent = `${info.product || 'C64 Ultimate'} v${info.firmware_version || '?'}`;
+      c64.el.statusText.textContent = `${product} v${fw} (${transport})`;
       c64.el.statusText.style.color = 'var(--success)';
     }
     if (c64.el.browser) c64.el.browser.classList.remove('hidden');
-    log('success', `C64 Ultimate connected: ${info.product} firmware ${info.firmware_version}`);
+    log('success', `C64 connected: ${product} fw ${fw} ${transport}`);
 
-    c64Browse('/SD');
+    c64Browse('/Temp');
   } catch (err) {
     c64.connected = false;
     if (c64.el.statusText) {
@@ -171,103 +184,25 @@ export async function c64Browse(path) {
 
   c64.currentPath = path;
   if (c64.el.pathBar) c64.el.pathBar.textContent = path;
+
+  // The C64 Ultimate HTTP API does not support directory listing.
+  // Files are uploaded to /Temp/ via POST and executed immediately.
+  // For browsing SD/USB contents, use FTP (port 21) or the C64's
+  // built-in web interface directly.
   if (c64.el.fileList) {
-    c64.el.fileList.innerHTML = '<div style="padding:0.5rem;color:var(--text-secondary)">Loading...</div>';
-  }
-
-  try {
-    // The C64 Ultimate serves directory listings via FTP-style at the root
-    // and via its web interface. Try the REST API first.
-    const resp = await c64Fetch(`/v1/files?path=${encodeURIComponent(path)}`,
-      { signal: AbortSignal.timeout(5000) });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      c64RenderFileList(data);
-      return;
-    }
-
-    // Fallback: try FTP listing via proxy
-    const ftpResp = await c64Fetch(path, { signal: AbortSignal.timeout(5000) });
-    if (ftpResp.ok) {
-      const text = await ftpResp.text();
-      c64RenderFtpListing(text);
-      return;
-    }
-
-    if (c64.el.fileList) {
-      c64.el.fileList.innerHTML = '<div style="padding:0.5rem;color:var(--error)">Could not list directory</div>';
-    }
-  } catch (err) {
-    if (c64.el.fileList) {
-      c64.el.fileList.innerHTML = `<div style="padding:0.5rem;color:var(--error)">${err.message}</div>`;
-    }
+    c64.el.fileList.innerHTML =
+      '<div style="padding:0.5rem;color:var(--text-secondary)">' +
+      'Upload path: ' + path +
+      '<br><small>Drop files below to upload and run. ' +
+      'For SD browsing, use FTP (port 21) or the C64\'s web UI.</small>' +
+      '</div>';
   }
 }
 
-export function c64RenderFileList(data) {
-  const list = c64.el.fileList;
-  if (!list) return;
-  list.innerHTML = '';
-
-  // Handle JSON array or object with entries
-  const entries = Array.isArray(data) ? data : (data.files || data.entries || []);
-
-  if (entries.length === 0) {
-    list.innerHTML = '<div style="padding:0.5rem;color:var(--text-secondary)">(empty)</div>';
-    return;
-  }
-
-  for (const entry of entries) {
-    const name = entry.name || entry;
-    const isDir = entry.is_dir || entry.type === 'dir' || (typeof entry === 'string' && !entry.includes('.'));
-    const size = entry.size != null ? formatSize(entry.size) : '';
-
-    const row = document.createElement('div');
-    row.className = 'c64-file-entry' + (isDir ? ' dir' : '');
-    row.innerHTML = `<span>${isDir ? '/' : ''}${name}</span><span class="size">${size}</span>`;
-
-    if (isDir) {
-      row.addEventListener('click', () => c64Browse(`${c64.currentPath}/${name}`));
-    }
-
-    list.appendChild(row);
-  }
-}
-
-export function c64RenderFtpListing(text) {
-  const list = c64.el.fileList;
-  if (!list) return;
-  list.innerHTML = '';
-
-  // Parse FTP-style listing lines
-  const lines = text.split('\n').filter(l => l.trim());
-  if (lines.length === 0) {
-    list.innerHTML = '<div style="padding:0.5rem;color:var(--text-secondary)">(empty)</div>';
-    return;
-  }
-
-  for (const line of lines) {
-    // Format: "drw-rw-rw-   1 user     ftp            0 Jan 01  1980 SD"
-    // or:     "-rw-rw-rw-   1 user     ftp        16384 Jan 01  1980 file.prg"
-    const match = line.match(/^([d-])\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\d+\s+\S+\s+(.+)$/);
-    if (!match) continue;
-
-    const isDir = match[1] === 'd';
-    const size = parseInt(match[2]);
-    const name = match[3].trim();
-
-    const row = document.createElement('div');
-    row.className = 'c64-file-entry' + (isDir ? ' dir' : '');
-    row.innerHTML = `<span>${isDir ? '/' : ''}${name}</span><span class="size">${isDir ? '' : formatSize(size)}</span>`;
-
-    if (isDir) {
-      row.addEventListener('click', () => c64Browse(`${c64.currentPath}/${name}`));
-    }
-
-    list.appendChild(row);
-  }
-}
+// Note: c64RenderFileList and c64RenderFtpListing removed.
+// The C64 Ultimate HTTP API does not support directory listing.
+// FTP browsing would require an FTP client in the ESP32 firmware.
+// For now, the file browser shows the upload path and drop zone.
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -378,9 +313,17 @@ export async function c64ToggleUltimateMenu() {
   }
 }
 
-// Machine control — send PUT commands to C64 Ultimate
+// Machine control — send PUT commands to C64 Ultimate.
+// Debounced: ignores rapid clicks while a request is in flight.
+let _machineCommandBusy = false;
+
 export async function c64MachineCmd(command) {
   if (!c64.connected) return;
+  if (_machineCommandBusy) {
+    log('info', `C64: ${command} (waiting for previous command...)`);
+    return;
+  }
+  _machineCommandBusy = true;
   const headers = {};
   if (c64.password) headers['X-Password'] = c64.password;
   try {
@@ -394,6 +337,8 @@ export async function c64MachineCmd(command) {
     }
   } catch (err) {
     log('error', `C64 ${command}: ${err.message}`);
+  } finally {
+    _machineCommandBusy = false;
   }
 }
 
