@@ -1,0 +1,14 @@
+{
+  "name": "keeBLEr \u2014 Generic ESP32-S3",
+  "version": "1.3.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "../firmware/generic/bootloader.bin", "offset": 0 },
+        { "path": "../firmware/generic/partition-table.bin", "offset": 32768 },
+        { "path": "../firmware/generic/keebler.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

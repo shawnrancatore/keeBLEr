@@ -1,0 +1,215 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>keeBLEr Firmware Flasher</title>
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="description" content="Flash keeBLEr firmware to your ESP32-S3 board from the browser.">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg-primary: #1a1a2e;
+      --bg-secondary: #16213e;
+      --bg-tertiary: #0f3460;
+      --text-primary: #eeeeee;
+      --text-secondary: #a0a0b8;
+      --accent: #4cc9f0;
+      --accent-hover: #3ab4d9;
+      --border: #2a2a4a;
+      --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+      --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 16px; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    header .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .instructions {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+
+    .instructions h2 {
+      font-size: 1rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .instructions ol {
+      padding-left: 1.25rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .instructions li {
+      margin-bottom: 0.35rem;
+    }
+
+    .instructions code {
+      font-family: var(--font-mono);
+      background: var(--bg-tertiary);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+      color: var(--text-primary);
+    }
+
+    .board-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .board-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      text-align: center;
+    }
+
+    .board-card h3 {
+      font-size: 1rem;
+      color: var(--text-primary);
+    }
+
+    .board-card p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    esp-web-install-button {
+      --improv-on-flash-color: var(--accent);
+    }
+
+    esp-web-install-button button {
+      background: var(--bg-tertiary);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 0.5rem 1.25rem;
+      font-size: 0.9rem;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    esp-web-install-button button:hover {
+      background: var(--accent);
+      color: #000;
+    }
+
+    footer {
+      padding: 0.75rem 1.5rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+
+    footer a {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>keeBLEr</h1>
+    <span class="subtitle">Firmware Flasher</span>
+  </header>
+
+  <main>
+    <div class="instructions">
+      <h2>How to flash</h2>
+      <ol>
+        <li>Connect your ESP32-S3 board to this computer via USB.</li>
+        <li>Enter bootloader mode: hold the <code>BOOT</code> button, press and release <code>RESET</code>, then release <code>BOOT</code>.</li>
+        <li>Click the <strong>Install</strong> button for your board below.</li>
+        <li>Select the serial port when prompted by the browser (look for a USB or JTAG device).</li>
+        <li>Wait for the flash to complete. The board will reboot automatically.</li>
+      </ol>
+    </div>
+
+    <div class="board-cards">
+      <div class="board-card">
+        <h3>DevKitC-1</h3>
+        <p>ESP32-S3-DevKitC-1 development board with dual USB connectors.</p>
+        <esp-web-install-button manifest="manifests/devkitc1.json">
+          <button slot="activate">Install DevKitC-1</button>
+        </esp-web-install-button>
+      </div>
+
+      <div class="board-card">
+        <h3>XIAO ESP32S3</h3>
+        <p>Seeed Studio XIAO ESP32S3 compact board.</p>
+        <esp-web-install-button manifest="manifests/xiao.json">
+          <button slot="activate">Install XIAO</button>
+        </esp-web-install-button>
+      </div>
+
+      <div class="board-card">
+        <h3>Generic ESP32-S3</h3>
+        <p>Any ESP32-S3 devboard with BLE and native USB. No LED support.</p>
+        <esp-web-install-button manifest="manifests/generic.json">
+          <button slot="activate">Install Generic</button>
+        </esp-web-install-button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <a href="/">Back to keeBLEr</a>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# ESP-IDF build artifacts
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/certs/
+
+# Claude Code local state
+.claude/
+CLAUDE.md
+
+# TLS certificates (never commit private keys)
+*.pem
+docker/certs/
+docker/.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary
+*.tmp
+*.log

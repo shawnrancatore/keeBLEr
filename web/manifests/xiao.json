@@ -1,0 +1,14 @@
+{
+  "name": "keeBLEr \u2014 XIAO ESP32S3",
+  "version": "1.3.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "../firmware/xiao/bootloader.bin", "offset": 0 },
+        { "path": "../firmware/xiao/partition-table.bin", "offset": 32768 },
+        { "path": "../firmware/xiao/keebler.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "keeBLEr \u2014 DevKitC-1",
+  "version": "1.3.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "../firmware/devkitc1/bootloader.bin", "offset": 0 },
+        { "path": "../firmware/devkitc1/partition-table.bin", "offset": 32768 },
+        { "path": "../firmware/devkitc1/keebler.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}
