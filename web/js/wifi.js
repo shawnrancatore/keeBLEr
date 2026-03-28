@@ -544,6 +544,9 @@ const wifiEl = {};
 function _updateWifiUI() {
   if (!wifiEl.statusText) return;
 
+  const icon = $('#wifi-status-icon');
+  const isAP = state.wifiSSID && state.wifiIP && state.wifiIP.startsWith('192.168.4.');
+
   if (state.wifiConnected) {
     wifiEl.statusText.textContent = `Connected: ${state.wifiSSID || '?'} (${state.wifiIP || '?'})`;
     wifiEl.statusText.style.color = 'var(--success)';
@@ -552,11 +555,37 @@ function _updateWifiUI() {
     if (wifiEl.password) wifiEl.password.classList.add('hidden');
     if (wifiEl.btnDisconnect) wifiEl.btnDisconnect.classList.remove('hidden');
     if (wifiEl.btnForget) wifiEl.btnForget.classList.remove('hidden');
+    // Hide AP controls when connected
+    if (wifiEl.apControls) wifiEl.apControls.classList.add('hidden');
+    if (wifiEl.staControls) wifiEl.staControls.classList.add('hidden');
+
+    if (icon) {
+      icon.className = isAP ? 'wifi-icon ap-active' : 'wifi-icon sta-connected';
+      icon.title = isAP ? `AP: ${state.wifiSSID}` : `WiFi: ${state.wifiSSID} (${state.wifiIP})`;
+    }
   } else {
-    wifiEl.statusText.textContent = getStoredToken() ? 'Configured (not connected)' : 'Not configured';
+    const hasToken = !!getStoredToken();
+    wifiEl.statusText.textContent = hasToken ? 'Configured (not connected)' : 'Not configured';
     wifiEl.statusText.style.color = 'var(--text-secondary)';
     if (wifiEl.btnDisconnect) wifiEl.btnDisconnect.classList.add('hidden');
-    if (wifiEl.btnForget) wifiEl.btnForget.classList.toggle('hidden', !getStoredToken());
+    if (wifiEl.btnForget) wifiEl.btnForget.classList.toggle('hidden', !hasToken);
+
+    if (icon) {
+      icon.className = 'wifi-icon disconnected';
+      icon.title = 'WiFi not connected';
+    }
+  }
+
+  // Also update BLE icon
+  const bleIcon = $('#ble-status-icon');
+  if (bleIcon) {
+    if (state.transport === 'ble') {
+      bleIcon.className = 'ble-icon connected';
+      bleIcon.title = 'BLE connected';
+    } else {
+      bleIcon.className = 'ble-icon disconnected';
+      bleIcon.title = 'BLE disconnected';
+    }
   }
 }
 
@@ -734,14 +763,16 @@ export function wifiInit() {
   _updateWifiUI();
 
   // Validate token once BLE is connected — check periodically
-  const _checkBle = setInterval(() => {
-    if (state.transport === 'ble') {
-      clearInterval(_checkBle);
-      wifiValidateToken();
+  // Poll for BLE connection to validate token and update icons
+  let _bleWasConnected = false;
+  setInterval(() => {
+    const bleNow = state.transport === 'ble';
+    if (bleNow !== _bleWasConnected) {
+      _bleWasConnected = bleNow;
+      _updateWifiUI();
+      if (bleNow) wifiValidateToken();
     }
   }, 1000);
-  // Stop checking after 60s if never connected
-  setTimeout(() => clearInterval(_checkBle), 60000);
 
   log('info', 'WiFi proxy module loaded');
 }

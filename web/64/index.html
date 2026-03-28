@@ -71,7 +71,7 @@
       </div>
 
       <div id="connection-status">
-        <span id="status-dot" class="dot disconnected"></span>
+        <span id="ble-status-icon" class="ble-icon disconnected" title="BLE disconnected"></span>
         <span id="status-text">Disconnected</span>
       </div>
     </section>
@@ -111,8 +111,8 @@
     </section>
 
     <section id="wifi-section">
-      <details id="wifi-details">
-        <summary>WiFi Proxy</summary>
+      <details id="wifi-details" open>
+        <summary>WiFi Proxy <span id="wifi-status-icon" class="wifi-icon disconnected" title="Not connected"></span></summary>
         <div id="wifi-controls">
           <div id="wifi-status-bar">
             <span id="wifi-status-text">Not configured</span>
