@@ -4,20 +4,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>keeBLEr</title>
-  <link rel="stylesheet" href="./style.css">
+  <title>keeBLEr AV</title>
+  <link rel="stylesheet" href="../style.css">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#1a1a2e">
-  <meta name="description" content="keeBLEr — keyboard BLE enabler, browser-to-HID bridge">
+  <meta name="description" content="keeBLEr AV — keyboard BLE enabler with A/V capture">
 </head>
 <body>
   <header>
-    <h1>keeBLEr</h1>
-    <span class="subtitle">keyboard BLE enabler</span>
+    <h1>keeBLEr AV</h1>
+    <span class="subtitle">keyboard BLE enabler with A/V</span>
   </header>
 
   <main>
+    <section id="video-section">
+      <video id="video" autoplay playsinline></video>
+      <div id="video-overlay" class="hidden">No capture device selected</div>
+      <div id="video-toolbar">
+        <button id="btn-large" title="Large mode (L)">Large</button>
+        <button id="btn-fullscreen" title="Fullscreen (F)">Fullscreen</button>
+      </div>
+    </section>
+
     <section id="controls">
+      <div id="capture-controls">
+        <label for="capture-select">Capture Device</label>
+        <select id="capture-select">
+          <option value="">-- Select capture device --</option>
+        </select>
+
+        <label for="mode-select">Video Mode</label>
+        <select id="mode-select">
+          <option value="">-- Auto --</option>
+        </select>
+
+        <button id="btn-start-capture">Start Capture</button>
+        <button id="btn-stop-capture" disabled>Stop Capture</button>
+      </div>
+
+      <div id="audio-controls">
+        <label for="audio-volume">Volume</label>
+        <input type="range" id="audio-volume" min="0" max="100" value="75">
+        <span id="audio-volume-label">75%</span>
+        <button id="btn-mute">Mute</button>
+      </div>
+
       <div id="connection-controls">
         <button id="btn-ble">Connect BLE</button>
         <button id="btn-serial">Connect Serial</button>
@@ -69,37 +100,15 @@
   </main>
 
   <footer>
-    <span>keeBLEr &mdash; browser-to-HID via ESP32-S3</span>
+    <span>keeBLEr AV &mdash; browser-to-HID via ESP32-S3</span>
     <br>
-    <a href="./flash.html" style="color: var(--accent); font-size: 0.75rem;">Firmware Flasher</a>
+    <a href="../" style="color: var(--accent); font-size: 0.75rem;">keeBLEr</a>
     <span style="color: var(--border); font-size: 0.75rem;"> | </span>
-    <a href="./av/" style="color: var(--accent); font-size: 0.75rem;">keeBLEr AV</a>
+    <a href="../64/" style="color: var(--accent); font-size: 0.75rem;">keeBLEr64</a>
     <span style="color: var(--border); font-size: 0.75rem;"> | </span>
-    <a href="./64/" style="color: var(--accent); font-size: 0.75rem;">keeBLEr64</a>
+    <a href="../flash.html" style="color: var(--accent); font-size: 0.75rem;">Firmware Flasher</a>
   </footer>
 
-  <script type="module">
-    import { initElements } from './js/state.js';
-    import { connectBle, connectSerial, disconnect, testLoopback, scheduleAutoConnect } from './js/connection.js';
-    import { setupKeyboardCapture } from './js/keyboard.js';
-    import { setupMouseCapture } from './js/mouse.js';
-    import { registerServiceWorker, checkBrowserApis } from './js/init.js';
-    import { log } from './js/ui.js';
-
-    initElements('base');
-
-    document.getElementById('btn-ble').addEventListener('click', connectBle);
-    document.getElementById('btn-serial').addEventListener('click', connectSerial);
-    document.getElementById('btn-disconnect').addEventListener('click', disconnect);
-    document.getElementById('btn-loopback').addEventListener('click', testLoopback);
-
-    checkBrowserApis();
-    setupKeyboardCapture();
-    setupMouseCapture();
-    registerServiceWorker();
-    scheduleAutoConnect(1500);
-
-    log('info', 'keeBLEr base tier loaded');
-  </script>
+  <script type="module" src="./av-app.js"></script>
 </body>
 </html>

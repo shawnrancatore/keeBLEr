@@ -56,11 +56,21 @@ Alternative boards:
 | XIAO ESP32S3 | ~$8 | [Seeed Studio](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | `-DKEEBLER_BOARD=xiao` |
 | Any ESP32-S3 with USB | varies | | `-DKEEBLER_BOARD=generic` |
 
+## Web app tiers
+
+keeBLEr comes in three tiers, each extending the previous:
+
+| Tier | URL | What it does |
+|------|-----|-------------|
+| **keeBLEr** | [`/`](https://shawnrancatore.github.io/keeBLEr/) | BLE/Serial wireless keyboard and mouse control |
+| **keeBLEr AV** | [`/av/`](https://shawnrancatore.github.io/keeBLEr/av/) | Adds HDMI capture, audio passthrough, video modes — [docs](docs/av-mode.md) |
+| **keeBLEr64** | [`/64/`](https://shawnrancatore.github.io/keeBLEr/64/) | Adds C64 Ultimate integration and Commodore theme — [docs](docs/c64-mode.md) |
+
+All three tiers share the same ES module codebase. Each tier loads only the modules it needs.
+
 ## Features
 
 - **Wireless keyboard/mouse** — BLE GATT transport, no USB cable to the controller
-- **HDMI capture** — see the target screen in the browser via USB capture card
-- **Audio passthrough** — hear the target's audio with volume control (AGC/noise suppression disabled for clean passthrough)
 - **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
 - **Auto-reconnect** — aggressive BLE reconnection, auto-connects to paired devices on page load
 - **Web Serial fallback** — UART transport for development and recovery
@@ -189,19 +199,37 @@ keebler/
     CMakeLists.txt
     sdkconfig.defaults
   web/
-    index.html             # Main controller UI
-    app.js                 # BLE, serial, capture, keyboard, mouse, protocol
-    style.css              # Dark theme
+    index.html             # keeBLEr base tier (keyboard only)
+    style.css              # Shared CSS (all tiers)
+    sw.js                  # Service worker
     flash.html             # Browser-based firmware flasher
+    js/                    # ES modules (shared across tiers)
+      protocol.js          #   BLE constants, CRC, frame builder/parser
+      keycodes.js          #   HID keycode maps
+      state.js             #   Shared state, DOM element factory
+      ui.js                #   Logging, status display
+      connection.js        #   BLE/Serial transport, reconnect, heartbeat
+      keyboard.js          #   Key event handlers
+      mouse.js             #   Pointer lock, mouse events
+      capture.js           #   HDMI capture, audio, video modes (AV tier)
+      c64.js               #   C64 Ultimate integration (64 tier)
+      init.js              #   Service worker, API checks
+    av/                    # keeBLEr AV tier
+      index.html
+      av-app.js            #   AV entry point
+    64/                    # keeBLEr64 tier
+      index.html
+      c64-app.js           #   C64 entry point
+      c64.css              #   Commodore theme
     firmware/              # Pre-built binaries for web flasher
     manifests/             # ESP Web Tools flash manifests
-    manifest.webmanifest   # PWA manifest
-    sw.js                  # Service worker
   docker/
-    docker-compose.yml     # HTTPS web server
+    docker-compose.yml     # HTTPS web server (dev + production)
     nginx.conf
   docs/
-    c64-ultimate-usb-research.md  # C64 Ultimate USB host analysis
+    av-mode.md             # keeBLEr AV documentation
+    c64-mode.md            # keeBLEr64 documentation
+    c64-ultimate-usb-research.md
 ```
 
 ## Adding a new board

@@ -1,0 +1,153 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>keeBLEr64</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="./c64.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#40318d">
+  <meta name="description" content="keeBLEr64 — keyboard BLE enabler and C64 terminal">
+</head>
+<body class="c64-mode">
+  <header>
+    <h1>keeBLEr64</h1>
+    <span class="subtitle">keyboard BLE enabler and C64 terminal</span>
+  </header>
+
+  <main>
+    <section id="video-section">
+      <video id="video" autoplay playsinline></video>
+      <div id="video-overlay" class="hidden">No capture device selected</div>
+      <div id="video-toolbar">
+        <button id="btn-large" title="Large mode (L)">Large</button>
+        <button id="btn-fullscreen" title="Fullscreen (F)">Fullscreen</button>
+      </div>
+    </section>
+
+    <section id="c64-quick-bar">
+      <button id="btn-c64-ultimate" onclick="c64ToggleUltimateMenu()" title="Toggle Ultimate menu (API or ScrollLock)">Ultimate</button>
+      <span class="c64-qb-sep"></span>
+      <button onclick="c64MachineCmd('reset')">Reset</button>
+      <button onclick="c64MachineCmd('pause')">Pause</button>
+      <button onclick="c64MachineCmd('resume')">Resume</button>
+      <button onclick="c64MachineCmd('reboot')">Reboot</button>
+      <span class="c64-qb-sep"></span>
+      <button id="btn-c64-quick-load" title="Upload and run a .prg, mount a .d64, etc.">Load File</button>
+      <span class="c64-qb-sep"></span>
+      <span id="c64-quick-status"></span>
+    </section>
+
+    <section id="controls">
+      <div id="capture-controls">
+        <label for="capture-select">Capture Device</label>
+        <select id="capture-select">
+          <option value="">-- Select capture device --</option>
+        </select>
+
+        <label for="mode-select">Video Mode</label>
+        <select id="mode-select">
+          <option value="">-- Auto --</option>
+        </select>
+
+        <button id="btn-start-capture">Start Capture</button>
+        <button id="btn-stop-capture" disabled>Stop Capture</button>
+      </div>
+
+      <div id="audio-controls">
+        <label for="audio-volume">Volume</label>
+        <input type="range" id="audio-volume" min="0" max="100" value="75">
+        <span id="audio-volume-label">75%</span>
+        <button id="btn-mute">Mute</button>
+      </div>
+
+      <div id="connection-controls">
+        <button id="btn-ble">Connect BLE</button>
+        <button id="btn-serial">Connect Serial</button>
+        <button id="btn-disconnect" disabled>Disconnect</button>
+        <button id="btn-loopback" disabled>Test Loopback</button>
+      </div>
+
+      <div id="connection-status">
+        <span id="status-dot" class="dot disconnected"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </section>
+
+    <section id="c64-section">
+      <details id="c64-details">
+        <summary>C64 Ultimate File Transfer</summary>
+        <div id="c64-controls">
+          <label for="c64-ip">IP Address</label>
+          <input type="text" id="c64-ip" placeholder="192.168.50.193" spellcheck="false">
+          <label for="c64-password">Password</label>
+          <input type="password" id="c64-password" placeholder="(optional)" spellcheck="false">
+          <button id="btn-c64-connect">Connect</button>
+          <span id="c64-status-text"></span>
+        </div>
+        <div id="c64-browser" class="hidden">
+          <div id="c64-path-bar">
+            <button id="btn-c64-up" title="Parent directory">..</button>
+            <span id="c64-current-path">/SD</span>
+          </div>
+          <div id="c64-file-list"></div>
+          <div id="c64-drop-zone" tabindex="0">
+            Drop files here: .prg runs, .d64 mounts, .sid plays, .crt loads
+          </div>
+          <div id="c64-upload-status"></div>
+        </div>
+      </details>
+    </section>
+
+    <section id="mouse-area" title="Click to capture mouse">
+      <div id="mouse-area-label">Click here to capture mouse</div>
+      <div id="mouse-crosshair" class="hidden">+</div>
+    </section>
+
+    <section id="system-details">
+      <details>
+        <summary>System Details</summary>
+        <div id="sys-inner">
+          <div id="key-state">
+            <h3>Pressed Keys</h3>
+            <div id="key-list"></div>
+          </div>
+          <div id="device-status">
+            <h3>Device Status</h3>
+            <div class="status-grid">
+              <span class="label">Protocol Version:</span>
+              <span id="dev-version">--</span>
+              <span class="label">Board Type:</span>
+              <span id="dev-board">--</span>
+              <span class="label">Transport:</span>
+              <span id="dev-transport">--</span>
+              <span class="label">Last Error:</span>
+              <span id="dev-error">--</span>
+              <span class="label">Heartbeat:</span>
+              <span id="dev-heartbeat">--</span>
+            </div>
+          </div>
+          <div id="log-section">
+            <h3>Log</h3>
+            <div id="log"></div>
+          </div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span>keeBLEr64 &mdash; browser-to-HID via ESP32-S3</span>
+    <br>
+    <a href="../" style="color: var(--accent); font-size: 0.75rem;">keeBLEr</a>
+    <span style="color: var(--border); font-size: 0.75rem;"> | </span>
+    <a href="../av/" style="color: var(--accent); font-size: 0.75rem;">keeBLEr AV</a>
+    <span style="color: var(--border); font-size: 0.75rem;"> | </span>
+    <a href="../flash.html" style="color: var(--accent); font-size: 0.75rem;">Firmware Flasher</a>
+  </footer>
+
+  <script type="module" src="./c64-app.js"></script>
+</body>
+</html>

@@ -1,13 +1,29 @@
 // SPDX-License-Identifier: MIT
-// keebler service worker — stale-while-revalidate caching
+// keeBLEr service worker — stale-while-revalidate caching
 
-const CACHE_NAME = 'keebler-v1';
+const CACHE_NAME = 'keebler-v2';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/app.js',
-  '/style.css',
-  '/manifest.webmanifest'
+  './',
+  './index.html',
+  './style.css',
+  './manifest.webmanifest',
+  './js/protocol.js',
+  './js/keycodes.js',
+  './js/state.js',
+  './js/ui.js',
+  './js/connection.js',
+  './js/keyboard.js',
+  './js/mouse.js',
+  './js/capture.js',
+  './js/c64.js',
+  './js/init.js',
+  './av/index.html',
+  './av/av-app.js',
+  './av/manifest.webmanifest',
+  './64/index.html',
+  './64/c64-app.js',
+  './64/c64.css',
+  './64/manifest.webmanifest',
 ];
 
 // Install: pre-cache static assets
@@ -38,13 +54,11 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: serve from cache, fall back to network, cache the response
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {
-        // Return cache hit but also update cache in background
         const fetchPromise = fetch(event.request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
@@ -53,13 +67,10 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return response;
-        }).catch(() => {
-          // Network failed, that's fine - we have the cache
-        });
+        }).catch(() => {});
         return cached;
       }
 
-      // Not in cache - fetch from network
       return fetch(event.request).then((response) => {
         if (response && response.status === 200) {
           const clone = response.clone();
