@@ -117,12 +117,33 @@
           <div id="wifi-status-bar">
             <span id="wifi-status-text">Not configured</span>
           </div>
-          <button id="btn-wifi-scan">Scan Networks</button>
-          <select id="wifi-ssid-select" class="hidden">
-            <option value="">-- Select network --</option>
-          </select>
-          <input type="password" id="wifi-password" placeholder="WiFi password" class="hidden">
-          <button id="btn-wifi-connect" class="hidden">Connect</button>
+
+          <div id="wifi-mode-toggle">
+            <label>
+              <input type="radio" name="wifi-mode" value="sta" checked> Join network
+            </label>
+            <label>
+              <input type="radio" name="wifi-mode" value="ap"> Create network (AP)
+            </label>
+          </div>
+
+          <!-- STA mode: scan and join existing network -->
+          <div id="wifi-sta-controls">
+            <button id="btn-wifi-scan">Scan Networks</button>
+            <select id="wifi-ssid-select" class="hidden">
+              <option value="">-- Select network --</option>
+            </select>
+            <input type="password" id="wifi-password" placeholder="WiFi password" class="hidden">
+            <button id="btn-wifi-connect" class="hidden">Connect</button>
+          </div>
+
+          <!-- AP mode: create a network for C64 to join -->
+          <div id="wifi-ap-controls" class="hidden">
+            <input type="text" id="wifi-ap-ssid" placeholder="Network name (e.g. keebler)" value="keebler" spellcheck="false">
+            <input type="password" id="wifi-ap-password" placeholder="Password (8+ chars, or empty=open)">
+            <button id="btn-wifi-ap-start">Start AP</button>
+          </div>
+
           <button id="btn-wifi-disconnect" class="hidden">Disconnect</button>
           <button id="btn-wifi-forget" class="hidden">Forget</button>
         </div>

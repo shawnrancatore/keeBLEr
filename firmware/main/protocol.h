@@ -54,6 +54,8 @@ extern "C" {
 #define KB_PKT_WIFI_TOKEN_VALIDATE 0x46
 #define KB_PKT_WIFI_TOKEN_RESPONSE 0x47
 #define KB_PKT_WIFI_FORGET_REQ     0x48
+#define KB_PKT_WIFI_AP_START       0x49  /* Start AP mode: token(16) ssid_len(1) ssid pass_len(1) pass */
+#define KB_PKT_WIFI_AP_EVENT       0x4A  /* AP client event: event(1) mac(6) ip(4) */
 
 /* HTTP proxy (0x50-0x58) */
 #define KB_PKT_HTTP_REQUEST        0x50
@@ -107,9 +109,14 @@ extern "C" {
 
 #define KB_WIFI_STATE_OFF           0
 #define KB_WIFI_STATE_CONNECTING    1
-#define KB_WIFI_STATE_CONNECTED     2
+#define KB_WIFI_STATE_CONNECTED     2  /* STA mode, connected to network */
 #define KB_WIFI_STATE_DISCONNECTED  3
 #define KB_WIFI_STATE_ERROR         4
+#define KB_WIFI_STATE_AP_ACTIVE     5  /* AP mode, hosting network */
+
+/* WiFi AP event types */
+#define KB_WIFI_AP_CLIENT_CONNECTED    1
+#define KB_WIFI_AP_CLIENT_DISCONNECTED 2
 
 /* ---------- HTTP methods ---------- */
 

@@ -8,6 +8,7 @@ import {
   TYPE_WIFI_SCAN_REQ, TYPE_WIFI_SCAN_RESULT, TYPE_WIFI_SCAN_DONE,
   TYPE_WIFI_CONNECT_REQ, TYPE_WIFI_STATUS, TYPE_WIFI_DISCONNECT_REQ,
   TYPE_WIFI_TOKEN_VALIDATE, TYPE_WIFI_TOKEN_RESPONSE, TYPE_WIFI_FORGET_REQ,
+  TYPE_WIFI_AP_START, TYPE_WIFI_AP_EVENT,
   TYPE_HTTP_REQUEST, TYPE_HTTP_REQUEST_HEADER, TYPE_HTTP_REQUEST_BODY,
   TYPE_HTTP_REQUEST_END, TYPE_HTTP_RESPONSE_STATUS, TYPE_HTTP_RESPONSE_BODY,
   TYPE_HTTP_RESPONSE_DONE, TYPE_HTTP_REQUEST_URL_CONT, TYPE_HTTP_ERROR,
@@ -119,6 +120,49 @@ export async function wifiConnect(ssid, password) {
     };
 
     sendFrame(TYPE_WIFI_CONNECT_REQ, payload).catch(err => {
+      clearTimeout(_pendingConnect.timeout);
+      _pendingConnect = null;
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Start WiFi AP mode — the keeBLEr device creates its own network.
+ * Other devices (like C64 Ultimate) connect to this network.
+ * @param {string} ssid  The network name to create
+ * @param {string} password  WPA2 password (empty = open network)
+ */
+export async function wifiStartAP(ssid, password) {
+  if (!state.transport) return;
+
+  const token = tokenBytes();
+  const ssidBytes = new TextEncoder().encode(ssid);
+  const passBytes = new TextEncoder().encode(password || '');
+  const payload = new Uint8Array(16 + 1 + ssidBytes.length + 1 + passBytes.length);
+  payload.set(token, 0);
+  payload[16] = ssidBytes.length;
+  payload.set(ssidBytes, 17);
+  payload[17 + ssidBytes.length] = passBytes.length;
+  if (passBytes.length > 0) {
+    payload.set(passBytes, 18 + ssidBytes.length);
+  }
+
+  log('info', `Starting AP: ${ssid}`);
+
+  return new Promise((resolve, reject) => {
+    if (_pendingConnect) {
+      _pendingConnect.reject(new Error('Connect superseded'));
+      clearTimeout(_pendingConnect.timeout);
+    }
+    _pendingConnect = {
+      resolve, reject,
+      timeout: setTimeout(() => {
+        _pendingConnect = null;
+        reject(new Error('WiFi AP start timeout'));
+      }, 15000),
+    };
+    sendFrame(TYPE_WIFI_AP_START, payload).catch(err => {
       clearTimeout(_pendingConnect.timeout);
       _pendingConnect = null;
       reject(err);
@@ -299,12 +343,27 @@ export function handleWifiFrame(type, payload) {
       _handleHttpError(payload);
       break;
 
+    case TYPE_WIFI_AP_EVENT:
+      _handleApEvent(payload);
+      break;
+
     default:
       log('info', `WiFi frame ${typeName} (${payload.length} bytes)`);
   }
 }
 
 // --- Scan handlers ---
+
+function _handleApEvent(payload) {
+  if (payload.length < 7) return;
+  const event = payload[0];
+  const mac = Array.from(payload.subarray(1, 7)).map(b => b.toString(16).padStart(2, '0')).join(':');
+  if (event === 1) {
+    log('success', `AP: client connected (${mac})`);
+  } else if (event === 2) {
+    log('info', `AP: client disconnected (${mac})`);
+  }
+}
 
 function _handleScanResult(payload) {
   if (!_pendingScan || payload.length < 3) return;
@@ -571,6 +630,27 @@ async function _onForgetClick() {
   }
 }
 
+async function _onApStartClick() {
+  const ssid = wifiEl.apSsid ? wifiEl.apSsid.value.trim() : '';
+  const pass = wifiEl.apPassword ? wifiEl.apPassword.value : '';
+  if (!ssid) {
+    log('warn', 'Enter a network name for the AP');
+    return;
+  }
+  if (pass.length > 0 && pass.length < 8) {
+    log('warn', 'AP password must be at least 8 characters (or empty for open)');
+    return;
+  }
+  try {
+    if (wifiEl.statusText) wifiEl.statusText.textContent = 'Starting AP...';
+    await wifiStartAP(ssid, pass);
+    log('success', `AP started: ${ssid} — configure C64 Ultimate to connect to this network`);
+  } catch (err) {
+    log('error', `AP start failed: ${err.message}`);
+  }
+  _updateWifiUI();
+}
+
 // ---------------------------------------------------------------------------
 // Init — called by c64-app.js
 // ---------------------------------------------------------------------------
@@ -585,12 +665,30 @@ export function wifiInit() {
   wifiEl.btnDisconnect = $('#btn-wifi-disconnect');
   wifiEl.btnForget     = $('#btn-wifi-forget');
 
+  // AP mode elements
+  wifiEl.staControls   = $('#wifi-sta-controls');
+  wifiEl.apControls    = $('#wifi-ap-controls');
+  wifiEl.apSsid        = $('#wifi-ap-ssid');
+  wifiEl.apPassword    = $('#wifi-ap-password');
+  wifiEl.btnApStart    = $('#btn-wifi-ap-start');
+
   // Wire up button events
   if (wifiEl.btnScan) wifiEl.btnScan.addEventListener('click', _onScanClick);
   if (wifiEl.ssidSelect) wifiEl.ssidSelect.addEventListener('change', _onSsidSelect);
   if (wifiEl.btnConnect) wifiEl.btnConnect.addEventListener('click', _onConnectClick);
   if (wifiEl.btnDisconnect) wifiEl.btnDisconnect.addEventListener('click', _onDisconnectClick);
   if (wifiEl.btnForget) wifiEl.btnForget.addEventListener('click', _onForgetClick);
+  if (wifiEl.btnApStart) wifiEl.btnApStart.addEventListener('click', _onApStartClick);
+
+  // WiFi mode toggle (STA vs AP)
+  const modeRadios = document.querySelectorAll('input[name="wifi-mode"]');
+  modeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isAp = radio.value === 'ap' && radio.checked;
+      if (wifiEl.staControls) wifiEl.staControls.classList.toggle('hidden', isAp);
+      if (wifiEl.apControls) wifiEl.apControls.classList.toggle('hidden', !isAp);
+    });
+  });
 
   // Register frame handler with connection.js
   registerWifiHandler(handleWifiFrame);

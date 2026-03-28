@@ -26,6 +26,7 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 #include "lwip/ip4_addr.h"
+#include "esp_mac.h"
 
 static const char *TAG = "wifi_proxy";
 
@@ -67,6 +68,7 @@ typedef enum {
     CMD_STATUS,
     CMD_HTTP_EXECUTE,
     CMD_FORGET,
+    CMD_AP_START,
 } wifi_cmd_type_t;
 
 /* ========================================================================= */
@@ -118,7 +120,9 @@ static uint8_t  s_token[KB_WIFI_TOKEN_LEN];
 static bool     s_token_valid = false;
 
 static bool     s_wifi_initialized = false;
+static bool     s_ap_mode = false;
 static esp_netif_t *s_sta_netif = NULL;
+static esp_netif_t *s_ap_netif = NULL;
 
 static QueueHandle_t s_cmd_queue = NULL;
 static TaskHandle_t  s_task_handle = NULL;
@@ -341,6 +345,38 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             memset(&s_ip_addr, 0, sizeof(s_ip_addr));
             break;
         }
+        case WIFI_EVENT_AP_START:
+            ESP_LOGI(TAG, "WiFi AP started");
+            s_wifi_state = KB_WIFI_STATE_AP_ACTIVE;
+            break;
+        case WIFI_EVENT_AP_STOP:
+            ESP_LOGI(TAG, "WiFi AP stopped");
+            if (s_ap_mode) {
+                s_wifi_state = KB_WIFI_STATE_DISCONNECTED;
+            }
+            break;
+        case WIFI_EVENT_AP_STACONNECTED: {
+            wifi_event_ap_staconnected_t *ev = (wifi_event_ap_staconnected_t *)event_data;
+            ESP_LOGI(TAG, "AP: client connected, MAC=" MACSTR " aid=%d",
+                     MAC2STR(ev->mac), ev->aid);
+            /* Notify browser: event(1) mac(6) — IP comes later via DHCP */
+            uint8_t payload[7];
+            payload[0] = KB_WIFI_AP_CLIENT_CONNECTED;
+            memcpy(&payload[1], ev->mac, 6);
+            send_response(KB_PKT_WIFI_AP_EVENT, payload, sizeof(payload),
+                          KB_TRANSPORT_BLE);
+            break;
+        }
+        case WIFI_EVENT_AP_STADISCONNECTED: {
+            wifi_event_ap_stadisconnected_t *ev = (wifi_event_ap_stadisconnected_t *)event_data;
+            ESP_LOGI(TAG, "AP: client disconnected, MAC=" MACSTR, MAC2STR(ev->mac));
+            uint8_t payload[7];
+            payload[0] = KB_WIFI_AP_CLIENT_DISCONNECTED;
+            memcpy(&payload[1], ev->mac, 6);
+            send_response(KB_PKT_WIFI_AP_EVENT, payload, sizeof(payload),
+                          KB_TRANSPORT_BLE);
+            break;
+        }
         default:
             break;
         }
@@ -381,6 +417,116 @@ static esp_err_t wifi_sta_init(void)
     s_wifi_state = KB_WIFI_STATE_DISCONNECTED;
     ESP_LOGI(TAG, "WiFi STA initialized");
     return ESP_OK;
+}
+
+/* ========================================================================= */
+/*  WiFi AP Init and Start                                                   */
+/* ========================================================================= */
+
+static esp_err_t wifi_ap_init(void)
+{
+    if (s_wifi_initialized) {
+        /* Tear down STA mode first if it was initialized */
+        esp_wifi_stop();
+        if (s_sta_netif) {
+            esp_netif_destroy_default_wifi(s_sta_netif);
+            s_sta_netif = NULL;
+        }
+        s_wifi_initialized = false;
+    }
+
+    ESP_LOGI(TAG, "Initializing WiFi AP");
+
+    if (!s_ap_netif) {
+        esp_netif_init();
+        esp_event_loop_create_default();
+    }
+
+    if (!s_ap_netif) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+
+    s_wifi_initialized = true;
+    s_ap_mode = true;
+    return ESP_OK;
+}
+
+static void do_wifi_ap_start(const char *ssid, const char *pass, uint8_t transport)
+{
+    esp_err_t err = wifi_ap_init();
+    if (err != ESP_OK) {
+        send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
+        return;
+    }
+
+    wifi_config_t ap_cfg = {
+        .ap = {
+            .channel = 1,
+            .max_connection = 4,
+            .authmode = strlen(pass) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN,
+            .pmf_cfg = { .required = false },
+        },
+    };
+    strncpy((char *)ap_cfg.ap.ssid, ssid, sizeof(ap_cfg.ap.ssid) - 1);
+    ap_cfg.ap.ssid_len = strlen(ssid);
+    if (strlen(pass) > 0) {
+        strncpy((char *)ap_cfg.ap.password, pass, sizeof(ap_cfg.ap.password) - 1);
+    }
+
+    ESP_LOGI(TAG, "Starting AP: SSID=%s auth=%s", ssid,
+             strlen(pass) > 0 ? "WPA2" : "open");
+
+    err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "AP set config failed: %s", esp_err_to_name(err));
+        send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
+        return;
+    }
+
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "AP start failed: %s", esp_err_to_name(err));
+        send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
+        return;
+    }
+
+    /* AP is ready — get our IP (typically 192.168.4.1) */
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(s_ap_netif, &ip_info) == ESP_OK) {
+        s_ip_addr = ip_info.ip;
+    }
+
+    strncpy(s_connected_ssid, ssid, sizeof(s_connected_ssid) - 1);
+    s_connected_ssid[sizeof(s_connected_ssid) - 1] = '\0';
+
+    /* Save AP credentials to NVS */
+    nvs_handle_t handle;
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err == ESP_OK) {
+        nvs_set_str(handle, NVS_KEY_WIFI_SSID, ssid);
+        nvs_set_str(handle, NVS_KEY_WIFI_PASS, pass);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
+
+    /* Send token + status */
+    uint8_t resp[1 + KB_WIFI_TOKEN_LEN + 1];
+    resp[0] = 1; /* success */
+    memcpy(&resp[1], s_token, KB_WIFI_TOKEN_LEN);
+    resp[1 + KB_WIFI_TOKEN_LEN] = 1;
+    send_response(KB_PKT_WIFI_TOKEN_RESPONSE, resp, sizeof(resp), transport);
+
+    do_wifi_status(transport);
+
+    ESP_LOGI(TAG, "AP started: SSID=%s IP=" IPSTR, ssid, IP2STR(&s_ip_addr));
 }
 
 /* ========================================================================= */
@@ -783,6 +929,9 @@ static void wifi_proxy_task(void *param)
             case CMD_FORGET:
                 do_wifi_forget(cmd.transport);
                 break;
+            case CMD_AP_START:
+                do_wifi_ap_start(cmd.connect.ssid, cmd.connect.pass, cmd.transport);
+                break;
             }
         }
     }
@@ -922,6 +1071,42 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport)
         return;
     }
 
+    /* ---- WiFi AP Start ---- */
+    case KB_PKT_WIFI_AP_START: {
+        /* Payload: token(16) ssid_len(1) ssid(N) pass_len(1) pass(M) */
+        if (pkt->length < KB_WIFI_TOKEN_LEN + 2) {
+            send_ack(KB_ACK_ERR_BAD_LENGTH, transport);
+            return;
+        }
+        if (!token_validate(pkt->payload)) {
+            send_ack(KB_ACK_ERR_BAD_TOKEN, transport);
+            return;
+        }
+        const uint8_t *p = pkt->payload + KB_WIFI_TOKEN_LEN;
+        uint8_t ssid_len = *p++;
+        if (pkt->length < KB_WIFI_TOKEN_LEN + 2 + ssid_len) {
+            send_ack(KB_ACK_ERR_BAD_LENGTH, transport);
+            return;
+        }
+        const uint8_t *ssid = p;
+        p += ssid_len;
+        uint8_t pass_len = *p++;
+        const uint8_t *pass = p;
+
+        cmd.type = CMD_AP_START;
+        cmd.transport = transport;
+        memset(cmd.connect.ssid, 0, sizeof(cmd.connect.ssid));
+        memset(cmd.connect.pass, 0, sizeof(cmd.connect.pass));
+        memcpy(cmd.connect.ssid, ssid, ssid_len < 32 ? ssid_len : 32);
+        if (pass_len > 0) {
+            memcpy(cmd.connect.pass, pass, pass_len < 64 ? pass_len : 64);
+        }
+        if (xQueueSend(s_cmd_queue, &cmd, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "WiFi command queue full");
+        }
+        return;
+    }
+
     /* ---- HTTP Request Start ---- */
     case KB_PKT_HTTP_REQUEST: {
         /* Payload: token(16) method(1) url_len(2,LE) url(N<=109) */
@@ -937,7 +1122,8 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport)
             send_ack(KB_ACK_ERR_HTTP_IN_PROGRESS, transport);
             return;
         }
-        if (s_wifi_state != KB_WIFI_STATE_CONNECTED) {
+        if (s_wifi_state != KB_WIFI_STATE_CONNECTED &&
+            s_wifi_state != KB_WIFI_STATE_AP_ACTIVE) {
             send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
             return;
         }
@@ -1156,5 +1342,6 @@ esp_err_t kb_wifi_init(void)
 
 bool kb_wifi_is_connected(void)
 {
-    return s_wifi_state == KB_WIFI_STATE_CONNECTED && s_ip_addr.addr != 0;
+    return (s_wifi_state == KB_WIFI_STATE_CONNECTED ||
+            s_wifi_state == KB_WIFI_STATE_AP_ACTIVE) && s_ip_addr.addr != 0;
 }
