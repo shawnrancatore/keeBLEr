@@ -690,12 +690,24 @@ static void do_wifi_disconnect(uint8_t transport)
 {
     if (s_wifi_initialized) {
         esp_wifi_disconnect();
-        s_wifi_state = KB_WIFI_STATE_DISCONNECTED;
+        esp_wifi_stop();
+        esp_wifi_deinit();
+        if (s_sta_netif) {
+            esp_netif_destroy_default_wifi(s_sta_netif);
+            s_sta_netif = NULL;
+        }
+        if (s_ap_netif) {
+            esp_netif_destroy_default_wifi(s_ap_netif);
+            s_ap_netif = NULL;
+        }
+        s_wifi_initialized = false;
+        s_ap_mode = false;
+        s_wifi_state = KB_WIFI_STATE_OFF;
         memset(&s_ip_addr, 0, sizeof(s_ip_addr));
         memset(s_connected_ssid, 0, sizeof(s_connected_ssid));
     }
     send_ack(KB_ACK_OK, transport);
-    ESP_LOGI(TAG, "WiFi disconnected by request");
+    ESP_LOGI(TAG, "WiFi fully stopped");
 }
 
 static void do_wifi_status(uint8_t transport)
