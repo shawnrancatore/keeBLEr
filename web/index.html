@@ -27,13 +27,14 @@
     </section>
 
     <section id="c64-quick-bar">
-      <button onclick="c64MachineCmd('reset')">Reset C64</button>
-      <button onclick="c64MachineCmd('menu_button')">Menu</button>
+      <button id="btn-c64-ultimate" onclick="c64ToggleUltimateMenu()" title="Toggle Ultimate menu (API or ScrollLock)">Ultimate</button>
+      <span class="c64-qb-sep"></span>
+      <button onclick="c64MachineCmd('reset')">Reset</button>
       <button onclick="c64MachineCmd('pause')">Pause</button>
       <button onclick="c64MachineCmd('resume')">Resume</button>
+      <button onclick="c64MachineCmd('reboot')">Reboot</button>
       <span class="c64-qb-sep"></span>
       <button id="btn-c64-quick-load" title="Upload and run a .prg, mount a .d64, etc.">Load File</button>
-      <button onclick="c64MachineCmd('reboot')">Reboot</button>
       <span class="c64-qb-sep"></span>
       <span id="c64-quick-status"></span>
     </section>

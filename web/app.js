@@ -1772,6 +1772,12 @@ function init() {
   const modeLink = document.getElementById('mode-link');
   if (appMode === 'c64') {
     document.body.classList.add('c64-mode');
+    // Rebrand header for C64 mode
+    const h1 = document.querySelector('header h1');
+    if (h1) h1.textContent = 'keeBLEr64';
+    const subtitle = document.querySelector('header .subtitle');
+    if (subtitle) subtitle.textContent = 'keyboard BLE enabler and C64 terminal';
+    document.title = 'keeBLEr64';
     // Auto-expand C64 panel
     const details = document.getElementById('c64-details');
     if (details) details.open = true;
@@ -2081,6 +2087,22 @@ async function c64UploadFiles(files) {
       c64.el.uploadStatus.style.color = 'var(--error)';
       log('error', `C64 ${action.label} failed: ${err.message}`);
     }
+  }
+}
+
+// Toggle the Ultimate menu — tries the HTTP API first (more reliable,
+// doesn't go through USB HID), falls back to sending ScrollLock over BLE.
+async function c64ToggleUltimateMenu() {
+  if (c64.connected) {
+    await c64MachineCmd('menu_button');
+  } else if (state.transport) {
+    // No API connection — send ScrollLock (0x47) as HID keypress
+    log('info', 'Sending ScrollLock via BLE (no C64 API connection)');
+    await sendFrame(TYPE_KEYBOARD_REPORT, new Uint8Array([0, 0, 0x47, 0, 0, 0, 0, 0]));
+    await new Promise(r => setTimeout(r, 100));
+    await sendFrame(TYPE_KEYBOARD_REPORT, new Uint8Array(8)); // release
+  } else {
+    log('warn', 'Connect BLE or C64 API first');
   }
 }
 
