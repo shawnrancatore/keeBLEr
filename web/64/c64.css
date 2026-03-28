@@ -360,6 +360,53 @@ body.c64-mode #wifi-details summary {
   color: var(--text-secondary);
 }
 
+/* Info tooltip */
+.info-tooltip {
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  color: var(--accent);
+  font-size: 1.1em;
+  vertical-align: middle;
+  margin-left: 0.3em;
+}
+
+.tooltip-content {
+  display: none;
+  position: absolute;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #352a78;
+  color: #e0dcff;
+  border: 1px solid #7b71d5;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  width: 300px;
+  z-index: 100;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.tooltip-content::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #7b71d5;
+}
+
+.info-tooltip:hover .tooltip-content,
+.info-tooltip:focus .tooltip-content {
+  display: block;
+}
+
 /* WiFi/BLE status icons — inline in the summary header */
 .wifi-icon {
   display: inline-block;

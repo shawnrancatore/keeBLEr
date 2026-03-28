@@ -142,6 +142,18 @@
             <input type="text" id="wifi-ap-ssid" placeholder="Network name (e.g. keebler)" value="keebler" spellcheck="false">
             <input type="password" id="wifi-ap-password" placeholder="Password (8+ chars, or empty=open)">
             <button id="btn-wifi-ap-start">Start AP</button>
+            <span class="info-tooltip" tabindex="0" title="AP Setup Guide">&#9432;
+              <span class="tooltip-content">
+                <strong>After starting the AP:</strong><br>
+                1. Click the <em>Ultimate</em> button to open the C64 menu<br>
+                2. Navigate to <em>F2 &rarr; WiFi settings</em><br>
+                3. Select your keeBLEr network name<br>
+                4. Enter the password you set above<br>
+                5. The C64 will connect and get an IP (usually 192.168.4.2)<br>
+                6. Enter that IP in the C64 panel and click Connect<br><br>
+                <small>The C64 Ultimate does not expose WiFi network selection via its HTTP API &mdash; this must be done through the on-device menu.</small>
+              </span>
+            </span>
           </div>
 
           <button id="btn-wifi-disconnect" class="hidden">Disconnect</button>
