@@ -710,12 +710,165 @@ async function _onApStartClick() {
   try {
     if (wifiEl.statusText) wifiEl.statusText.textContent = 'Starting AP...';
     await wifiStartAP(ssid, pass);
-    log('success', `AP started: ${ssid} — configure C64 Ultimate to connect to this network`);
+    log('success', `AP started: ${ssid}`);
+
+    // Offer to auto-configure the C64
+    if (wifiEl.apAutoConfig) wifiEl.apAutoConfig.classList.remove('hidden');
   } catch (err) {
     log('error', `AP start failed: ${err.message}`);
   }
   _updateWifiUI();
 }
+
+// ---------------------------------------------------------------------------
+// C64 WiFi auto-config macro
+//
+// Sends a scripted keyboard sequence via USB HID to navigate the
+// C64 Ultimate's menu and connect it to the keeBLEr AP.
+// Menu path: ScrollLock → F2 → down to "WiFi settings" → Enter →
+//            type SSID → Tab → type password → Enter
+// ---------------------------------------------------------------------------
+
+// HID keycodes for text entry (uppercase PETSCII maps to lowercase HID)
+const _charToHid = {};
+'abcdefghijklmnopqrstuvwxyz'.split('').forEach((c, i) => { _charToHid[c] = 0x04 + i; });
+'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((c, i) => { _charToHid[c] = 0x04 + i; }); // same codes, shift handled separately
+'1234567890'.split('').forEach((c, i) => { _charToHid[c] = 0x1E + i; });
+_charToHid[' '] = 0x2C;
+_charToHid['-'] = 0x2D;
+_charToHid['='] = 0x2E;
+_charToHid['_'] = 0x2D; // shift + -
+_charToHid['.'] = 0x37;
+_charToHid['!'] = 0x1E; // shift + 1
+_charToHid['@'] = 0x1F; // shift + 2
+_charToHid['#'] = 0x20; // shift + 3
+_charToHid['$'] = 0x21; // shift + 4
+
+const _shiftChars = new Set('ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$_'.split(''));
+
+async function _hidKey(code, mod = 0) {
+  await sendFrame(TYPE_KEYBOARD_REPORT, new Uint8Array([mod, 0, code, 0, 0, 0, 0, 0]));
+  await _delay(80);
+  await sendFrame(TYPE_KEYBOARD_REPORT, new Uint8Array(8));
+  await _delay(80);
+}
+
+async function _hidType(text) {
+  for (const ch of text) {
+    const code = _charToHid[ch];
+    if (!code) continue;
+    const mod = _shiftChars.has(ch) ? 0x02 : 0x00; // left shift
+    await _hidKey(code, mod);
+  }
+}
+
+function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+export async function c64WifiAutoConfig() {
+  const ssid = wifiEl.apSsid ? wifiEl.apSsid.value.trim() : '';
+  const pass = wifiEl.apPassword ? wifiEl.apPassword.value : '';
+  if (!ssid) { log('warn', 'No AP SSID set'); return; }
+
+  log('info', 'Auto-configuring C64 WiFi via keyboard macro...');
+  if (wifiEl.statusText) wifiEl.statusText.textContent = 'Configuring C64...';
+
+  try {
+    // Step 1: Open Ultimate menu via ScrollLock
+    log('info', '  Opening Ultimate menu...');
+    await _hidKey(0x47); // ScrollLock
+    await _delay(1000);
+
+    // Step 2: Press F2 for configuration
+    log('info', '  Opening configuration (F2)...');
+    await _hidKey(0x3B); // F2
+    await _delay(800);
+
+    // Step 3: Navigate to "WiFi settings"
+    // The config menu has ~20 categories. WiFi settings is typically near
+    // the bottom. We'll press Down arrow repeatedly to find it.
+    // The safest approach: press End to jump to the bottom, then Up a few.
+    // Or just press Down enough times. WiFi settings is item ~12.
+    log('info', '  Navigating to WiFi settings...');
+    for (let i = 0; i < 13; i++) {
+      await _hidKey(0x51); // Down arrow
+      await _delay(100);
+    }
+    await _delay(300);
+
+    // Step 4: Enter to open WiFi settings submenu
+    log('info', '  Opening WiFi settings...');
+    await _hidKey(0x28); // Enter
+    await _delay(800);
+
+    // Step 5: We should now be in WiFi settings.
+    // The hidden SSID config has fields for SSID and password.
+    // Navigate to the SSID field and type the AP name.
+    // In the Ultimate menu, pressing Enter on "Show APs.." opens the AP list.
+    // But for manual entry, we need the SSID input field.
+    // Let's try: navigate down to the SSID field, Enter to edit, type, Enter.
+
+    // The WiFi config submenu typically shows:
+    //   Show APs..
+    //   SSID: <current>
+    //   Password: <current>
+    //   Auth Type: <current>
+    // Navigate down to SSID field
+    await _hidKey(0x51); // Down to SSID
+    await _delay(200);
+    await _hidKey(0x28); // Enter to edit
+    await _delay(500);
+
+    // Clear existing text (select all + delete)
+    // In the Ultimate menu, the text field is editable. Press Delete/Backspace
+    // repeatedly to clear, then type new SSID.
+    for (let i = 0; i < 32; i++) {
+      await _hidKey(0x2A); // Backspace
+    }
+    await _delay(200);
+
+    // Type the SSID
+    log('info', `  Typing SSID: ${ssid}`);
+    await _hidType(ssid);
+    await _delay(200);
+    await _hidKey(0x28); // Enter to confirm
+    await _delay(500);
+
+    // Step 6: Navigate to Password field and type password
+    if (pass) {
+      await _hidKey(0x51); // Down to Password
+      await _delay(200);
+      await _hidKey(0x28); // Enter to edit
+      await _delay(500);
+      for (let i = 0; i < 64; i++) {
+        await _hidKey(0x2A); // Backspace to clear
+      }
+      await _delay(200);
+      log('info', '  Typing password...');
+      await _hidType(pass);
+      await _delay(200);
+      await _hidKey(0x28); // Enter to confirm
+      await _delay(500);
+    }
+
+    // Step 7: Exit the menu (Escape or ScrollLock)
+    log('info', '  Closing menu...');
+    await _hidKey(0x29); // Escape
+    await _delay(500);
+    await _hidKey(0x29); // Escape again (back to main)
+    await _delay(500);
+    await _hidKey(0x47); // ScrollLock to close menu
+    await _delay(1000);
+
+    log('success', 'C64 WiFi auto-config complete — C64 should now connect to keeBLEr AP');
+    if (wifiEl.statusText) wifiEl.statusText.textContent = 'C64 WiFi configured — waiting for connection...';
+
+  } catch (err) {
+    log('error', `Auto-config failed: ${err.message}`);
+  }
+}
+
+// Expose for inline onclick
+window.c64WifiAutoConfig = c64WifiAutoConfig;
 
 // ---------------------------------------------------------------------------
 // Init — called by c64-app.js
@@ -737,6 +890,7 @@ export function wifiInit() {
   wifiEl.apSsid        = $('#wifi-ap-ssid');
   wifiEl.apPassword    = $('#wifi-ap-password');
   wifiEl.btnApStart    = $('#btn-wifi-ap-start');
+  wifiEl.apAutoConfig  = $('#btn-wifi-ap-autoconfig');
 
   // Wire up button events
   if (wifiEl.btnScan) wifiEl.btnScan.addEventListener('click', _onScanClick);
