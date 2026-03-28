@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: MIT
+# Build keeBLEr firmware for all board targets
+
+name: Build Firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/build-firmware.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board:
+          - { name: devkitc1, flag: "" }
+          - { name: xiao, flag: "-DKEEBLER_BOARD=xiao" }
+          - { name: generic, flag: "-DKEEBLER_BOARD=generic" }
+
+    name: Build ${{ matrix.board.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: firmware
+          command: idf.py ${{ matrix.board.flag }} build
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.board.name }}
+          path: |
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+            firmware/build/keebler.bin
+
+  # After all builds succeed, update the web flasher binaries
+  update-flasher:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Copy binaries to web/firmware/
+        run: |
+          for board in devkitc1 xiao generic; do
+            mkdir -p web/firmware/$board
+            cp artifacts/firmware-$board/firmware/build/bootloader/bootloader.bin web/firmware/$board/
+            cp artifacts/firmware-$board/firmware/build/partition_table/partition-table.bin web/firmware/$board/
+            cp artifacts/firmware-$board/firmware/build/keebler.bin web/firmware/$board/
+          done
+
+      - name: Check for changes
+        id: check
+        run: |
+          git diff --quiet web/firmware/ && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit updated binaries
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "Shawn Rancatore"
+          git config user.email "shawn.rancatore@gmail.com"
+          git add web/firmware/
+          git commit -m "Update firmware binaries from CI build"
+          git push
