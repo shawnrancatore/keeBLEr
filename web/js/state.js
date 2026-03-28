@@ -61,6 +61,11 @@ export const state = {
   // Echo/Loopback
   pendingEcho: null,
   echoTimeout: null,
+
+  // WiFi
+  wifiConnected: false,
+  wifiSSID: null,
+  wifiIP: null,
 };
 
 // ---------------------------------------------------------------------------

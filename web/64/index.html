@@ -96,7 +96,35 @@
           <div id="c64-drop-zone" tabindex="0">
             Drop files here: .prg runs, .d64 mounts, .sid plays, .crt loads
           </div>
+          <div id="c64-transfer-progress">
+            <div class="c64-drive-icon">
+              <div class="c64-drive-led" id="c64-drive-led"></div>
+            </div>
+            <div class="c64-progress-bar">
+              <div class="c64-progress-fill" id="c64-progress-fill"></div>
+            </div>
+            <span class="c64-progress-text" id="c64-progress-text">0%</span>
+          </div>
           <div id="c64-upload-status"></div>
+        </div>
+      </details>
+    </section>
+
+    <section id="wifi-section">
+      <details id="wifi-details">
+        <summary>WiFi Proxy</summary>
+        <div id="wifi-controls">
+          <div id="wifi-status-bar">
+            <span id="wifi-status-text">Not configured</span>
+          </div>
+          <button id="btn-wifi-scan">Scan Networks</button>
+          <select id="wifi-ssid-select" class="hidden">
+            <option value="">-- Select network --</option>
+          </select>
+          <input type="password" id="wifi-password" placeholder="WiFi password" class="hidden">
+          <button id="btn-wifi-connect" class="hidden">Connect</button>
+          <button id="btn-wifi-disconnect" class="hidden">Disconnect</button>
+          <button id="btn-wifi-forget" class="hidden">Forget</button>
         </div>
       </details>
     </section>

@@ -5,6 +5,7 @@ import { state, $ } from './state.js';
 import { log } from './ui.js';
 import { sendFrame } from './connection.js';
 import { TYPE_KEYBOARD_REPORT } from './protocol.js';
+import { bleProxyFetch, wifiProxyAvailable } from './wifi.js';
 
 // ---------------------------------------------------------------------------
 // C64 state
@@ -96,6 +97,17 @@ export function c64ProxyUrl(path) {
   return `http://${c64.ip}${path}`;
 }
 
+/**
+ * Fetch wrapper that tries BLE WiFi proxy first, then falls back to
+ * nginx proxy or direct. The BLE proxy eliminates the need for Docker.
+ */
+export async function c64Fetch(path, options = {}) {
+  if (wifiProxyAvailable()) {
+    return bleProxyFetch(`http://${c64.ip}${path}`, options);
+  }
+  return fetch(c64ProxyUrl(path), options);
+}
+
 // ---------------------------------------------------------------------------
 // Connect
 // ---------------------------------------------------------------------------
@@ -111,11 +123,11 @@ export async function c64Connect() {
   c64.password = c64.el.password ? c64.el.password.value.trim() : '';
   localStorage.setItem('keebler_c64_ip', ip);
 
-  if (!c64HasProxy()) {
-    log('warn', 'C64 API requires the Docker/self-hosted setup for the CORS proxy. ' +
-        'GitHub Pages cannot proxy to your LAN. Run keeBLEr64 from Docker: docker compose up -d');
+  if (!c64HasProxy() && !wifiProxyAvailable()) {
+    log('warn', 'C64 API requires the Docker/self-hosted setup for the CORS proxy, ' +
+        'or WiFi BLE proxy. Connect WiFi in the WiFi Proxy panel, or run Docker: docker compose up -d');
     if (c64.el.statusText) {
-      c64.el.statusText.textContent = 'Needs CORS proxy (use Docker)';
+      c64.el.statusText.textContent = 'Needs proxy (WiFi or Docker)';
       c64.el.statusText.style.color = 'var(--warning)';
     }
     // Still try — maybe the user set up their own proxy or the C64 firmware was modded
@@ -126,7 +138,7 @@ export async function c64Connect() {
   }
 
   try {
-    const resp = await fetch(c64ProxyUrl('/v1/info'), { signal: AbortSignal.timeout(5000) });
+    const resp = await c64Fetch('/v1/info', { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const info = await resp.json();
 
@@ -166,7 +178,7 @@ export async function c64Browse(path) {
   try {
     // The C64 Ultimate serves directory listings via FTP-style at the root
     // and via its web interface. Try the REST API first.
-    const resp = await fetch(c64ProxyUrl(`/v1/files?path=${encodeURIComponent(path)}`),
+    const resp = await c64Fetch(`/v1/files?path=${encodeURIComponent(path)}`,
       { signal: AbortSignal.timeout(5000) });
 
     if (resp.ok) {
@@ -176,7 +188,7 @@ export async function c64Browse(path) {
     }
 
     // Fallback: try FTP listing via proxy
-    const ftpResp = await fetch(c64ProxyUrl(path), { signal: AbortSignal.timeout(5000) });
+    const ftpResp = await c64Fetch(path, { signal: AbortSignal.timeout(5000) });
     if (ftpResp.ok) {
       const text = await ftpResp.text();
       c64RenderFtpListing(text);
@@ -316,9 +328,11 @@ export async function c64UploadFiles(files) {
     }
 
     try {
-      const resp = await fetch(c64ProxyUrl(action.endpoint), {
+      // BLE proxy needs ArrayBuffer, not File objects
+      const body = wifiProxyAvailable() ? new Uint8Array(await file.arrayBuffer()) : file;
+      const resp = await c64Fetch(action.endpoint, {
         method: 'POST',
-        body: file,
+        body,
         headers,
         signal: AbortSignal.timeout(30000),
       });
@@ -370,7 +384,7 @@ export async function c64MachineCmd(command) {
   const headers = {};
   if (c64.password) headers['X-Password'] = c64.password;
   try {
-    const resp = await fetch(c64ProxyUrl(`/v1/machine:${command}`), {
+    const resp = await c64Fetch(`/v1/machine:${command}`, {
       method: 'PUT', headers, signal: AbortSignal.timeout(5000),
     });
     if (resp.ok) {

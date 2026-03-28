@@ -6,6 +6,7 @@ idf_component_register(
          "hid_bridge.c"
          "ble_transport.c"
          "serial_transport.c"
+         "wifi_proxy.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         nvs_flash
@@ -13,6 +14,10 @@ idf_component_register(
         esp_driver_uart
         bt
         esp_tinyusb
+        esp_wifi
+        esp_netif
+        esp_http_client
+        esp_timer
 )
 
 # Board selection: pass -DKEEBLER_BOARD=devkitc1 or -DKEEBLER_BOARD=xiao

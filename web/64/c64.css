@@ -257,5 +257,105 @@ body.c64-mode #video-section   { order: 1; }
 body.c64-mode #c64-quick-bar   { order: 2; }
 body.c64-mode #controls        { order: 3; }
 body.c64-mode #c64-section     { order: 4; }
-body.c64-mode #system-details  { order: 5; }
-body.c64-mode #mouse-area      { order: 6; }
+body.c64-mode #wifi-section    { order: 5; }
+body.c64-mode #system-details  { order: 6; }
+body.c64-mode #mouse-area      { order: 7; }
+
+/* 1541 disk drive progress indicator */
+#c64-transfer-progress {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+#c64-transfer-progress.active {
+  display: flex;
+}
+
+.c64-drive-icon {
+  width: 40px;
+  height: 24px;
+  background: #534b9e;
+  border: 2px solid #7b71d5;
+  border-radius: 3px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.c64-drive-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4a4;
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+
+.c64-drive-led.active {
+  background: #f44;
+  animation: c64-led-flicker 0.15s infinite alternate;
+}
+
+@keyframes c64-led-flicker {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
+}
+
+.c64-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #352a78;
+  border: 1px solid #7b71d5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.c64-progress-fill {
+  height: 100%;
+  background: #7b71d5;
+  width: 0%;
+  transition: width 0.1s linear;
+}
+
+.c64-progress-text {
+  min-width: 5em;
+  text-align: right;
+  color: #a09ae0;
+}
+
+/* WiFi proxy section */
+body.c64-mode #wifi-section {
+  border-color: #7b71d5;
+  border-width: 2px;
+}
+
+body.c64-mode #wifi-details summary {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+#wifi-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+#wifi-status-bar {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+#wifi-status-text {
+  color: var(--text-secondary);
+}

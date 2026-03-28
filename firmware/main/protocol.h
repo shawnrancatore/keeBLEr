@@ -44,6 +44,28 @@ extern "C" {
 #define KB_PKT_STATUS_RESPONSE  0x11
 #define KB_PKT_HEARTBEAT        0x20
 #define KB_PKT_HEARTBEAT_ACK    0x21
+/* WiFi management (0x40-0x48) */
+#define KB_PKT_WIFI_SCAN_REQ       0x40
+#define KB_PKT_WIFI_SCAN_RESULT    0x41
+#define KB_PKT_WIFI_SCAN_DONE      0x42
+#define KB_PKT_WIFI_CONNECT_REQ    0x43
+#define KB_PKT_WIFI_STATUS         0x44
+#define KB_PKT_WIFI_DISCONNECT_REQ 0x45
+#define KB_PKT_WIFI_TOKEN_VALIDATE 0x46
+#define KB_PKT_WIFI_TOKEN_RESPONSE 0x47
+#define KB_PKT_WIFI_FORGET_REQ     0x48
+
+/* HTTP proxy (0x50-0x58) */
+#define KB_PKT_HTTP_REQUEST        0x50
+#define KB_PKT_HTTP_REQUEST_HEADER 0x51
+#define KB_PKT_HTTP_REQUEST_BODY   0x52
+#define KB_PKT_HTTP_REQUEST_END    0x53
+#define KB_PKT_HTTP_RESPONSE_STATUS 0x54
+#define KB_PKT_HTTP_RESPONSE_BODY  0x55
+#define KB_PKT_HTTP_RESPONSE_DONE  0x56
+#define KB_PKT_HTTP_REQUEST_URL_CONT 0x57
+#define KB_PKT_HTTP_ERROR          0x58
+
 #define KB_PKT_ACK              0xFE
 #define KB_PKT_ECHO             0xFF
 
@@ -75,6 +97,41 @@ extern "C" {
 #define KB_ACK_ERR_UNKNOWN_TYPE 0x01
 #define KB_ACK_ERR_BAD_LENGTH   0x02
 #define KB_ACK_ERR_HID_FAIL     0x03
+#define KB_ACK_ERR_BAD_TOKEN    0x10
+#define KB_ACK_ERR_WIFI_FAIL    0x11
+#define KB_ACK_ERR_WIFI_NO_CREDS 0x12
+#define KB_ACK_ERR_HTTP_IN_PROGRESS 0x13
+#define KB_ACK_ERR_HTTP_TOO_LARGE 0x14
+
+/* ---------- WiFi state ---------- */
+
+#define KB_WIFI_STATE_OFF           0
+#define KB_WIFI_STATE_CONNECTING    1
+#define KB_WIFI_STATE_CONNECTED     2
+#define KB_WIFI_STATE_DISCONNECTED  3
+#define KB_WIFI_STATE_ERROR         4
+
+/* ---------- HTTP methods ---------- */
+
+#define KB_HTTP_METHOD_GET          0
+#define KB_HTTP_METHOD_POST         1
+#define KB_HTTP_METHOD_PUT          2
+#define KB_HTTP_METHOD_DELETE       3
+#define KB_HTTP_METHOD_PATCH        4
+
+/* ---------- HTTP error codes ---------- */
+
+#define KB_HTTP_ERR_TIMEOUT         1
+#define KB_HTTP_ERR_DNS             2
+#define KB_HTTP_ERR_CONNECT         3
+#define KB_HTTP_ERR_INTERNAL        4
+
+/* ---------- WiFi proxy limits ---------- */
+
+#define KB_WIFI_TOKEN_LEN           16
+#define KB_WIFI_MAX_URL_LEN         512
+#define KB_WIFI_MAX_BODY_LEN        (64 * 1024)
+#define KB_WIFI_BOOT_EXPIRE         60
 
 /* ---------- Payload structures ---------- */
 

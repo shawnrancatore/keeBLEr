@@ -22,6 +22,14 @@ export function setReleaseAllKeys(fn) { _releaseAllKeys = fn; }
 export function setReleaseAllMouseButtons(fn) { _releaseAllMouseButtons = fn; }
 
 // ---------------------------------------------------------------------------
+// WiFi frame handler registration — wifi.js registers at init time
+// ---------------------------------------------------------------------------
+
+let _wifiFrameHandler = null;
+
+export function registerWifiHandler(handler) { _wifiFrameHandler = handler; }
+
+// ---------------------------------------------------------------------------
 // BLE write serialization
 // ---------------------------------------------------------------------------
 
@@ -102,6 +110,12 @@ export async function sendMouseReport(buttons, dx, dy, wheel, pan) {
 // ---------------------------------------------------------------------------
 
 export function handleFrame(type, payload) {
+  // Route WiFi/HTTP packets (0x40-0x5F) to registered handler
+  if (type >= 0x40 && type <= 0x5F && _wifiFrameHandler) {
+    _wifiFrameHandler(type, payload);
+    return;
+  }
+
   const typeName = TYPE_NAMES[type] || `0x${type.toString(16)}`;
 
   switch (type) {

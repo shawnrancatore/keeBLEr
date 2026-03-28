@@ -7,6 +7,7 @@ import { setupKeyboardCapture, registerShortcuts } from '../js/keyboard.js';
 import { setupMouseCapture } from '../js/mouse.js';
 import { setupCaptureListeners, enumerateCaptures, toggleLargeMode, toggleFullscreen } from '../js/capture.js';
 import { c64Init, c64UploadFiles } from '../js/c64.js';
+import { wifiInit } from '../js/wifi.js';
 import { registerServiceWorker, checkBrowserApis } from '../js/init.js';
 import { log } from '../js/ui.js';
 
@@ -27,6 +28,9 @@ setupCaptureListeners();
 
 // C64 Ultimate integration
 c64Init();
+
+// WiFi BLE-to-HTTP proxy
+wifiInit();
 
 // Auto-expand the C64 file transfer panel
 const c64Details = document.getElementById('c64-details');

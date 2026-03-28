@@ -28,6 +28,7 @@
 #include "hid_bridge.h"
 #include "ble_transport.h"
 #include "serial_transport.h"
+#include "wifi_proxy.h"
 
 static const char *TAG = "keebler";
 
@@ -186,6 +187,11 @@ static void on_packet_received(const kb_packet_t *pkt, void *user_ctx)
     }
 
     default:
+        /* WiFi / HTTP proxy packets: 0x40-0x58 */
+        if (pkt->type >= 0x40 && pkt->type <= 0x58) {
+            kb_wifi_process_packet(pkt, ctx->transport);
+            return;
+        }
         ESP_LOGW(TAG, "Unknown packet type: 0x%02x", pkt->type);
         send_ack(KB_ACK_ERR_UNKNOWN_TYPE, ctx->transport);
         return;
@@ -325,6 +331,14 @@ void app_main(void)
         ESP_LOGI(TAG, "BLE transport ready");
     }
 
+    /* Initialize WiFi proxy (stays off until connect request) */
+    ret = kb_wifi_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi proxy init failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "WiFi proxy ready (WiFi off until connect request)");
+    }
+
     /* Initialize serial transport */
     serial_transport_set_rx_callback(on_packet_received, &s_uart_ctx);
     ret = serial_transport_init();
@@ -396,9 +410,10 @@ void app_main(void)
 
         /* ---- Periodic status log ---- */
         if (loop_count % 150 == 0) {
-            ESP_LOGI(TAG, "Status: USB=%s BLE=%s Mode=%d(%s)",
+            ESP_LOGI(TAG, "Status: USB=%s BLE=%s WiFi=%s Mode=%d(%s)",
                      hid_bridge_is_ready() ? "mounted" : "not mounted",
                      kb_ble_is_connected() ? "connected" : "disconnected",
+                     kb_wifi_is_connected() ? "connected" : "off",
                      s_hid_mode,
                      s_hid_mode == HID_MODE_BOOT_KB ? "boot_kb" : "composite");
         }
