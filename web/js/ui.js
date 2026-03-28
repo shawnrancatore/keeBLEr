@@ -42,14 +42,14 @@ export function log(level, message) {
 // ---------------------------------------------------------------------------
 
 export function setConnectionStatus(status, text) {
-  el.statusDot.className = `dot ${status}`;
-  el.statusText.textContent = text;
+  if (el.statusDot) el.statusDot.className = `dot ${status}`;
+  if (el.statusText) el.statusText.textContent = text;
 
   const connected = status === 'connected';
-  el.btnBle.disabled = connected || status === 'connecting';
-  el.btnSerial.disabled = connected || status === 'connecting';
-  el.btnDisconnect.disabled = !connected;
-  el.btnLoopback.disabled = !connected;
+  if (el.btnBle) el.btnBle.disabled = connected || status === 'connecting';
+  if (el.btnSerial) el.btnSerial.disabled = connected || status === 'connecting';
+  if (el.btnDisconnect) el.btnDisconnect.disabled = !connected;
+  if (el.btnLoopback) el.btnLoopback.disabled = !connected;
 }
 
 // ---------------------------------------------------------------------------
