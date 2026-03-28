@@ -195,11 +195,26 @@ export async function wifiForget() {
 }
 
 /** Validate stored token with device. Sends WIFI_TOKEN_VALIDATE. */
+let _pendingValidate = null;
+
 export async function wifiValidateToken() {
-  if (!state.transport) return;
-  const token = getStoredToken();
-  if (!token) return; // No token to validate
-  await sendFrame(TYPE_WIFI_TOKEN_VALIDATE, token);
+  if (!state.transport) return false;
+  const token = getStoredToken() || new Uint8Array(16); // zeros if no stored token
+
+  return new Promise((resolve) => {
+    _pendingValidate = { resolve };
+    sendFrame(TYPE_WIFI_TOKEN_VALIDATE, token).catch(() => {
+      _pendingValidate = null;
+      resolve(false);
+    });
+    // Timeout after 3 seconds
+    setTimeout(() => {
+      if (_pendingValidate) {
+        _pendingValidate = null;
+        resolve(false);
+      }
+    }, 3000);
+  });
 }
 
 /** Returns true if BLE connected AND WiFi connected on device. */
@@ -426,16 +441,26 @@ function _handleTokenResponse(payload) {
     storeToken(token);
     log('info', `WiFi token ${hasCreds ? 'valid (credentials stored)' : 'valid'}`);
   } else {
-    // Device sent us a new token (first-time or expired)
-    // Check if the token is all zeros (no token generated yet means device needs config)
     const allZero = token.every(b => b === 0);
     if (!allZero) {
+      // Device generated a token for us (first time or reissued)
       storeToken(token);
       log('info', 'WiFi token received from device');
     } else {
       clearToken();
-      log('info', 'WiFi token expired or not set');
+      log('info', 'No WiFi token on device — configure WiFi to generate one');
     }
+  }
+
+  // Resolve pending validate
+  if (_pendingValidate) {
+    _pendingValidate.resolve(valid || !token.every(b => b === 0));
+    _pendingValidate = null;
+  }
+
+  // Resolve pending connect (token response comes during connect too)
+  if (_pendingConnect && valid) {
+    // Don't resolve connect here — wait for WIFI_STATUS
   }
 }
 
@@ -542,6 +567,13 @@ async function _onScanClick() {
   }
 
   wifiEl.btnScan.disabled = true;
+  wifiEl.btnScan.textContent = 'Validating...';
+
+  // Ensure we have a valid token before scanning
+  if (!getStoredToken()) {
+    await wifiValidateToken();
+  }
+
   wifiEl.btnScan.textContent = 'Scanning...';
 
   try {
@@ -591,6 +623,11 @@ async function _onConnectClick() {
   if (wifiEl.statusText) {
     wifiEl.statusText.textContent = `Connecting to ${ssid}...`;
     wifiEl.statusText.style.color = 'var(--warning)';
+  }
+
+  // Ensure token is current before connecting
+  if (!getStoredToken()) {
+    await wifiValidateToken();
   }
 
   try {
