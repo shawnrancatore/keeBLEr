@@ -81,14 +81,19 @@ export function c64Init() {
 // Proxy URL
 // ---------------------------------------------------------------------------
 
+// Returns true if the nginx CORS proxy is available (Docker/self-hosted).
+// On GitHub Pages (*.github.io), there's no proxy — C64 API calls won't work.
+export function c64HasProxy() {
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/.test(h);
+}
+
 export function c64ProxyUrl(path) {
-  // Use nginx reverse proxy to avoid CORS issues.
-  // Falls back to direct URL if running on GitHub Pages (no proxy available).
-  const base = window.location.hostname === 'localhost' ||
-               window.location.hostname.match(/^[0-9.]+$/)
-    ? `/c64proxy/${c64.ip}`
-    : `http://${c64.ip}`;
-  return `${base}${path}`;
+  if (c64HasProxy()) {
+    return `/c64proxy/${c64.ip}${path}`;
+  }
+  // Direct — will likely fail due to CORS, but try anyway
+  return `http://${c64.ip}${path}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +110,20 @@ export async function c64Connect() {
   c64.ip = ip;
   c64.password = c64.el.password ? c64.el.password.value.trim() : '';
   localStorage.setItem('keebler_c64_ip', ip);
-  if (c64.el.statusText) c64.el.statusText.textContent = 'Connecting...';
+
+  if (!c64HasProxy()) {
+    log('warn', 'C64 API requires the Docker/self-hosted setup for the CORS proxy. ' +
+        'GitHub Pages cannot proxy to your LAN. Run keeBLEr64 from Docker: docker compose up -d');
+    if (c64.el.statusText) {
+      c64.el.statusText.textContent = 'Needs CORS proxy (use Docker)';
+      c64.el.statusText.style.color = 'var(--warning)';
+    }
+    // Still try — maybe the user set up their own proxy or the C64 firmware was modded
+  }
+
+  if (c64.el.statusText && !c64.el.statusText.textContent.includes('proxy')) {
+    c64.el.statusText.textContent = 'Connecting...';
+  }
 
   try {
     const resp = await fetch(c64ProxyUrl('/v1/info'), { signal: AbortSignal.timeout(5000) });
