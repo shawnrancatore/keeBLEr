@@ -407,12 +407,15 @@ function _handleWifiStatus(payload) {
   const ssidLen = payload[5];
   const ssid = ssidLen > 0 ? new TextDecoder().decode(payload.subarray(6, 6 + ssidLen)) : '';
 
-  state.wifiConnected = wifiState === 2;
+  const isConnected = wifiState === 2 || wifiState === 5; // STA connected or AP active
+  state.wifiConnected = isConnected;
   state.wifiSSID = ssid || null;
-  state.wifiIP = (wifiState === 2 && ip !== '0.0.0.0') ? ip : null;
+  state.wifiIP = (isConnected && ip !== '0.0.0.0') ? ip : null;
 
   if (wifiState === 2) {
     log('success', `WiFi connected: ${ssid} (${ip})`);
+  } else if (wifiState === 5) {
+    log('success', `WiFi AP active: ${ssid} (${ip})`);
   } else if (wifiState === 1) {
     log('info', 'WiFi connecting...');
   } else {
@@ -421,8 +424,18 @@ function _handleWifiStatus(payload) {
 
   _updateWifiUI();
 
+  // In AP mode, auto-populate the C64 IP field with the expected client IP
+  // (AP gateway is typically 192.168.4.1, first client gets 192.168.4.2)
+  if (wifiState === 5) {
+    const c64IpField = document.getElementById('c64-ip');
+    if (c64IpField && (!c64IpField.value || c64IpField.value === '192.168.50.193')) {
+      c64IpField.value = '192.168.4.2';
+      log('info', 'C64 IP set to 192.168.4.2 (expected AP client address)');
+    }
+  }
+
   // Resolve pending connect promise
-  if (_pendingConnect && wifiState === 2) {
+  if (_pendingConnect && isConnected) {
     clearTimeout(_pendingConnect.timeout);
     _pendingConnect.resolve();
     _pendingConnect = null;
