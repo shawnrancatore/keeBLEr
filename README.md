@@ -2,160 +2,115 @@
 
 **keeBLEr** = keyboard **BLE** enabler
 
-A wireless browser-to-HID bridge. Control a remote computer's keyboard and mouse from a web app over Bluetooth Low Energy, with live HDMI capture for screen viewing.
+A wireless keyboard bridge. Plug a tiny ESP32-S3 board into any computer's USB port, open a browser on your other computer, and type — wirelessly, over Bluetooth Low Energy. No drivers, no pairing menus, no apps to install.
 
 ```
-[Browser] ──BLE──> [ESP32-S3] ──USB HID──> [Target Computer]
-    │                                              │
-    └──────── HDMI capture ◄───────────────────────┘
+[Your Browser] ──BLE──> [ESP32-S3] ──USB HID──> [Target Computer]
 ```
 
-## Origin story
+## Why
 
-keeBLEr was built to solve a specific problem: using a [Commodore 64 Ultimate](https://ultimate64.com/) from a main PC without constantly swapping keyboards. By combining a cheap ESP32-S3 board, a USB HDMI capture dongle, and a browser-based controller, keeBLEr lets you see the C64's screen and type on it wirelessly — all from a browser tab on your daily driver.
+You have two computers on your desk. You want one keyboard for both. keeBLEr turns a $8 microcontroller into a wireless USB keyboard that any computer thinks is a regular keyboard plugged in. You control it from a browser tab.
 
-It worked on the first try with the C64 Ultimate, including the Ultimate menu (triggered by Scroll Lock). The boot protocol keyboard mode ensures compatibility with devices that have minimal USB HID support, from retro computers to BIOS screens to KVM switches.
+It works with everything: Windows, macOS, Linux, BIOS screens, KVM switches, retro computers — anything that accepts a USB keyboard.
 
-## Use cases
-
-- **Retro computer control** — drive a C64 Ultimate, MiSTer, or other retro device from your main PC
-- **Remote BIOS/UEFI access** — boot protocol keyboard works before any OS loads
-- **Headless server management** — see the screen and type without a physical keyboard attached
-- **KVM for home lab** — switch between machines from a browser tab
-- **Embedded device debugging** — control a target system while keeping your hands on your main keyboard
-
-## How it compares
-
-| | keeBLEr | PiKVM | TinyPilot |
-|---|---|---|---|
-| **Cost** | ~$20 | ~$100+ | ~$200+ |
-| **Wireless keyboard** | Yes (BLE) | No (network) | No (network) |
-| **BIOS compatible** | Yes (boot protocol) | Yes | Yes |
-| **Video capture** | USB HDMI dongle | CSI/USB | CSI/USB |
-| **Setup** | Flash + open browser | SD card image | SD card image |
-| **Form factor** | Tiny (XIAO: 21x17mm) | Pi-sized | Pi-sized |
-| **Network required** | No (BLE direct) | Yes | Yes |
-| **Virtual media** | No | Yes | Yes |
-| **ATX power control** | No | Yes | No |
-
-keeBLEr is not a full KVM replacement — it doesn't do virtual media or ATX power control. It excels at **wireless keyboard/mouse sharing with minimal hardware** and **universal HID compatibility**.
-
-## Bill of materials
+## What you need
 
 | Part | Price | Link |
 |------|-------|------|
-| Seeed Studio XIAO ESP32S3 | ~$8 | [seeedstudio.com](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) |
-| USB HDMI capture dongle | ~$10 | [Amazon](https://www.amazon.com/dp/B092PX5XQ9) |
-| USB-C cable | ~$3 | any data cable |
-| **Total** | **~$21** | |
+| Any ESP32-S3 board with USB | ~$8 | [XIAO ESP32S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html), [DevKitC-1](https://www.adafruit.com/product/5312), or similar |
+| USB cable | ~$3 | USB-C or micro-USB depending on board |
+| **Total** | **~$11** | |
 
-Alternative boards:
-| Board | Price | Link | Build flag |
-|-------|-------|------|------------|
-| ESP32-S3-DevKitC-1 | ~$10 | [Adafruit](https://www.adafruit.com/product/5312) | default |
-| XIAO ESP32S3 | ~$8 | [Seeed Studio](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | `-DKEEBLER_BOARD=xiao` |
-| Any ESP32-S3 with USB | varies | | `-DKEEBLER_BOARD=generic` |
-
-## Web app tiers
-
-keeBLEr comes in three tiers, each extending the previous:
-
-| Tier | URL | What it does |
-|------|-----|-------------|
-| **keeBLEr** | [`/`](https://shawnrancatore.github.io/keeBLEr/) | BLE/Serial wireless keyboard and mouse control |
-| **keeBLEr AV** | [`/av/`](https://shawnrancatore.github.io/keeBLEr/av/) | Adds HDMI capture, audio passthrough, video modes — [docs](docs/av-mode.md) |
-| **keeBLEr64** | [`/64/`](https://shawnrancatore.github.io/keeBLEr/64/) | Adds C64 Ultimate integration and Commodore theme — [docs](docs/c64-mode.md) |
-
-All three tiers share the same ES module codebase. Each tier loads only the modules it needs.
-
-## Features
-
-- **Wireless keyboard/mouse** — BLE GATT transport, no USB cable to the controller
-- **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
-- **WiFi BLE-to-HTTP proxy** — the ESP32-S3 bridges BLE to WiFi, letting the browser make HTTP API calls to LAN devices through the keeBLEr device. No Docker or CORS proxy needed. Works from GitHub Pages.
-- **WiFi AP mode** — keeBLEr can create its own WiFi network for devices to join, no existing infrastructure required
-- **Auto-reconnect** — aggressive BLE reconnection, auto-connects to paired devices on page load
-- **Web Serial fallback** — UART transport for development and recovery
-- **Browser-based flasher** — flash firmware from the browser, no toolchain needed
-- **PWA** — installable as a progressive web app
-- **Board portable** — DevKitC-1, XIAO ESP32S3, or any ESP32-S3 with native USB
+That's it. Flash the firmware, plug it into the target computer, open the web app in Chrome on your other computer, connect via BLE, and type.
 
 ## Quick start
 
-### Option A: Flash from browser (easiest)
+### 1. Flash the firmware
 
-1. Plug your ESP32-S3 board into your computer via USB
-2. Put it in bootloader mode (hold BOOT, tap RESET, release BOOT)
-3. Open the [keeBLEr flasher page](web/flash.html) in Chrome/Edge
-4. Select your board and click Install
+**From browser (easiest):** Open the [keeBLEr flasher](https://shawnrancatore.github.io/keeBLEr/flash.html) in Chrome, plug in your board in bootloader mode, select your board, click Install.
 
-### Option B: Build from source
-
-Requires [ESP-IDF v5.4+](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/).
-
+**From source:**
 ```bash
 cd firmware
 source ~/esp/esp-idf/export.sh
-
-# For DevKitC-1 (default)
 idf.py set-target esp32s3 && idf.py build && idf.py flash
-
-# For XIAO ESP32S3
-idf.py -DKEEBLER_BOARD=xiao set-target esp32s3 && idf.py build && idf.py flash
-
-# For any other ESP32-S3 board
-idf.py -DKEEBLER_BOARD=generic set-target esp32s3 && idf.py build && idf.py flash
 ```
 
-### Serve the web app
+### 2. Plug into the target computer
 
-Web Bluetooth and getUserMedia require HTTPS.
+The ESP32-S3's USB port plugs into the computer you want to control. It shows up as a standard USB keyboard.
 
-**Option A: GitHub Pages (easiest — no server needed)**
+### 3. Open the web app
 
-The web app is deployed automatically to GitHub Pages on every push:
+Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing.
 
-> **[https://shawnrancatore.github.io/keebler/](https://shawnrancatore.github.io/keebler/)**
+On subsequent visits, it auto-connects to your paired device.
 
-Just open the link in Chrome or Edge. If you fork the repo, enable GitHub Pages in your fork's Settings > Pages > Source: GitHub Actions.
+## Features
 
-**Option B: Development (self-signed cert, LAN only)**
+- **Wireless keyboard and mouse** — BLE GATT, no line-of-sight needed, ~10m range
+- **Universal compatibility** — boot protocol keyboard works in BIOS, UEFI, KVMs, retro computers
+- **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
+- **Auto-reconnect** — reconnects automatically on page load, survives device reboots
+- **No install** — runs in any Chromium browser (Chrome, Edge, Brave) over HTTPS
+- **Web Serial fallback** — UART transport for development and recovery
+- **Browser-based flasher** — flash firmware without installing a toolchain
+- **Tiny** — XIAO ESP32S3 is 21×17mm
+- **Board portable** — DevKitC-1, XIAO ESP32S3, or any ESP32-S3 with native USB
 
+## Extended tiers
+
+keeBLEr has two extended tiers that add capabilities on top of the base:
+
+| Tier | URL | What it adds | Extra hardware |
+|------|-----|-------------|----------------|
+| **keeBLEr AV** | [`/av/`](https://shawnrancatore.github.io/keeBLEr/av/) | HDMI capture, audio passthrough, video modes | USB HDMI capture dongle (~$10) |
+| **keeBLEr64** | [`/64/`](https://shawnrancatore.github.io/keeBLEr/64/) | C64 Ultimate integration, file transfer, Commodore theme, WiFi proxy | USB HDMI capture dongle (~$10) |
+
+All three tiers share the same firmware and ES module codebase. See [keeBLEr AV docs](docs/av-mode.md) and [keeBLEr64 docs](docs/c64-mode.md) for details.
+
+### Origin story
+
+keeBLEr was built to solve a specific problem: controlling a [Commodore 64 Ultimate](https://ultimate64.com/) from a main PC without swapping keyboards. The [keeBLEr64](docs/c64-mode.md) tier adds HDMI capture to see the C64 screen, a WiFi BLE-to-HTTP proxy to control the C64 Ultimate's API without Docker, file drag-and-drop, and a Commodore-inspired theme. It worked on the first try — boot protocol keyboard mode ensures compatibility with the C64 Ultimate's minimal USB HID stack.
+
+## HID modes
+
+Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
+
+| Mode | Description | Compatibility |
+|------|-------------|---------------|
+| 0 — Boot Keyboard | Standard 8-byte, no report IDs | BIOS, KVMs, retro computers, everything |
+| 1 — Composite | Keyboard + mouse with report IDs | Modern OSes (Windows, macOS, Linux) |
+
+## Supported boards
+
+| Board | Build flag | Notes |
+|-------|------------|-------|
+| ESP32-S3-DevKitC-1 | default | Dual USB for easy development |
+| XIAO ESP32S3 | `-DKEEBLER_BOARD=xiao` | Tiny production target |
+| Any ESP32-S3 with USB | `-DKEEBLER_BOARD=generic` | No LED/button assumptions |
+
+## Serve the web app yourself
+
+The hosted GitHub Pages version works for most people. For self-hosting:
+
+**Docker (self-signed cert, LAN):**
 ```bash
 mkdir -p docker/certs
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout docker/certs/key.pem -out docker/certs/cert.pem \
   -subj "/CN=keebler" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:$(hostname -I | awk '{print $1}')"
-
 cd docker && docker compose up -d
 ```
 
-Open `https://<your-ip>:8443/` in Chrome or Edge. You'll need to accept the self-signed certificate warning on first visit.
-
-**Option B: Production (Let's Encrypt, public domain)**
-
-If you have a domain name pointing to your server, Caddy handles TLS certificates automatically:
-
+**Docker (Let's Encrypt, public domain):**
 ```bash
-cd docker
-cp .env.example .env
-# Edit .env — set KEEBLER_DOMAIN and KEEBLER_EMAIL
+cd docker && cp .env.example .env
+# Set KEEBLER_DOMAIN and KEEBLER_EMAIL
 docker compose --profile production up -d
 ```
-
-This gives you a trusted HTTPS certificate with zero browser warnings. No manual cert management — Caddy auto-renews via Let's Encrypt.
-
-**Then:** Open the URL in Chrome or Edge. On first visit, click **Connect BLE** and pair your keeBLEr device. It auto-connects on subsequent visits.
-
-## HID modes
-
-Press the **BOOT button** (GPIO 0) to toggle between modes. The mode persists across reboots.
-
-| Mode | USB descriptor | LED | Compatibility |
-|------|---------------|-----|---------------|
-| 0 — Boot Keyboard | Standard 8-byte, no report IDs | Single flash | BIOS, KVMs, retro computers, everything |
-| 1 — Composite | Keyboard + mouse with report IDs | Double flash | Modern OSes (Windows, macOS, Linux) |
 
 ## BLE protocol
 
@@ -173,6 +128,8 @@ The device advertises as **"keebler \<version\>"** and exposes a custom GATT ser
 [0x4B magic] [LENGTH] [TYPE] [PAYLOAD...] [CRC8]
 ```
 
+LENGTH = payload bytes only. CRC-8 polynomial 0x07 over TYPE + PAYLOAD.
+
 | Type | Name | Payload |
 |------|------|---------|
 | `0x01` | KEYBOARD_REPORT | modifiers(1) + reserved(1) + keycodes(6) |
@@ -184,81 +141,44 @@ The device advertises as **"keebler \<version\>"** and exposes a custom GATT ser
 | `0xFE` | ACK | status(1) |
 | `0xFF` | ECHO | variable — loopback test |
 
-LENGTH = payload bytes only. CRC-8 polynomial 0x07 over TYPE + PAYLOAD.
-
 ## Project structure
 
 ```
 keebler/
-  firmware/
-    main/
-      main.c              # App entry, mode switching, BOOT button, LED
-      hid_bridge.c/h      # TinyUSB HID — boot KB and composite descriptors
-      ble_transport.c/h    # NimBLE GATT peripheral
-      serial_transport.c/h # UART fallback transport
-      protocol.h           # Packet protocol, CRC, frame parser
-      board_config.h       # Pin/board abstraction (DevKitC-1, XIAO, generic)
-      wifi_proxy.c/h       # WiFi STA/AP, BLE-to-HTTP proxy, token security
-    CMakeLists.txt
-    sdkconfig.defaults
-  web/
-    index.html             # keeBLEr base tier (keyboard only)
-    style.css              # Shared CSS (all tiers)
-    sw.js                  # Service worker
-    flash.html             # Browser-based firmware flasher
-    js/                    # ES modules (shared across tiers)
-      protocol.js          #   BLE constants, CRC, frame builder/parser
-      keycodes.js          #   HID keycode maps
-      state.js             #   Shared state, DOM element factory
-      ui.js                #   Logging, status display
-      connection.js        #   BLE/Serial transport, reconnect, heartbeat
-      keyboard.js          #   Key event handlers
-      mouse.js             #   Pointer lock, mouse events
-      capture.js           #   HDMI capture, audio, video modes (AV tier)
-      c64.js               #   C64 Ultimate integration (64 tier)
-      wifi.js              #   WiFi proxy: scan, connect, BLE-to-HTTP (64 tier)
-      init.js              #   Service worker, API checks
-    av/                    # keeBLEr AV tier
-      index.html
-      av-app.js            #   AV entry point
-    64/                    # keeBLEr64 tier
-      index.html
-      c64-app.js           #   C64 entry point
-      c64.css              #   Commodore theme
-    firmware/              # Pre-built binaries for web flasher
-    manifests/             # ESP Web Tools flash manifests
-  docker/
-    docker-compose.yml     # HTTPS web server (dev + production)
-    nginx.conf
-  docs/
-    av-mode.md             # keeBLEr AV documentation
-    c64-mode.md            # keeBLEr64 documentation
-    c64-ultimate-usb-research.md
+  firmware/main/             # ESP-IDF firmware (C)
+    main.c                   #   App entry, mode switching, BOOT button
+    hid_bridge.c/h           #   TinyUSB HID (boot KB + composite)
+    ble_transport.c/h        #   NimBLE GATT peripheral
+    serial_transport.c/h     #   UART fallback
+    protocol.h               #   Packet protocol, CRC, frame parser
+    board_config.h           #   Board abstraction
+    wifi_proxy.c/h           #   WiFi STA/AP + HTTP proxy (AV/64 tiers)
+  web/                       # Browser app (vanilla JS, ES modules)
+    index.html               #   keeBLEr base tier
+    av/                      #   keeBLEr AV tier
+    64/                      #   keeBLEr64 tier
+    js/                      #   Shared modules
+    flash.html               #   Browser-based firmware flasher
+  docker/                    # HTTPS web server configs
+  docs/                      # Extended tier docs + C64 reference
 ```
 
 ## Adding a new board
 
-1. Add a `#elif defined(BOARD_YOUR_BOARD)` section to `board_config.h`
-2. Define pin assignments: LED (optional), UART TX/RX, boot button, USB
-3. Add a CMake option in `main/CMakeLists.txt`
-4. Build with `-DKEEBLER_BOARD=your_board`
+1. Add a section to `board_config.h` with pin definitions
+2. Add a CMake option in `main/CMakeLists.txt`
+3. Build with `-DKEEBLER_BOARD=your_board`
 
-The generic target works on most ESP32-S3 boards out of the box — custom boards are only needed if you want LED feedback or non-standard UART pins.
+The generic target works on most ESP32-S3 boards out of the box.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | `ACK error 0x03` | USB HID not mounted — wait ~10s for enumeration, check cable |
-| BLE won't connect | Ensure HTTPS (not HTTP), use Chrome/Edge, enable Web Bluetooth flags |
-| No BLE after full flash erase | Reflash without `erase_flash`; NVS reformats on boot |
-| XIAO shows as `303a:1001` | Unplug and replug — USB PHY needs a clean power cycle |
-| Audio fades in/out | Check log for `AGC=off`; if ON, reload the page |
+| BLE won't connect | Ensure HTTPS, use Chrome/Edge |
+| XIAO shows as `303a:1001` after flash | Unplug and replug |
 | Keys stuck after disconnect | Fixed in firmware — auto key-release on BLE disconnect |
-
-## USB VID/PID
-
-This project uses VID `0x1209` from [pid.codes](https://pid.codes/) (open-source USB ID registry) with PID `0x4B42`.
 
 ## License
 
