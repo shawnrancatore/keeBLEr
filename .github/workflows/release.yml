@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: MIT
+# Create a GitHub Release with firmware binaries and web app zip
+# Triggered by pushing a version tag (e.g., v1.3.0)
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      # Build firmware for all three board targets
+      - name: Build DevKitC-1 firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: firmware
+          command: idf.py build
+
+      - name: Package DevKitC-1 firmware
+        run: |
+          mkdir -p release/firmware-devkitc1
+          cp firmware/build/bootloader/bootloader.bin release/firmware-devkitc1/
+          cp firmware/build/partition_table/partition-table.bin release/firmware-devkitc1/
+          cp firmware/build/keebler.bin release/firmware-devkitc1/
+
+      - name: Build XIAO firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: firmware
+          command: idf.py -DKEEBLER_BOARD=xiao build
+
+      - name: Package XIAO firmware
+        run: |
+          mkdir -p release/firmware-xiao
+          cp firmware/build/bootloader/bootloader.bin release/firmware-xiao/
+          cp firmware/build/partition_table/partition-table.bin release/firmware-xiao/
+          cp firmware/build/keebler.bin release/firmware-xiao/
+
+      - name: Build Generic firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: firmware
+          command: idf.py -DKEEBLER_BOARD=generic build
+
+      - name: Package Generic firmware
+        run: |
+          mkdir -p release/firmware-generic
+          cp firmware/build/bootloader/bootloader.bin release/firmware-generic/
+          cp firmware/build/partition_table/partition-table.bin release/firmware-generic/
+          cp firmware/build/keebler.bin release/firmware-generic/
+
+      # Create firmware zip archives
+      - name: Create firmware archives
+        run: |
+          cd release
+          zip -r ../keebler-firmware-devkitc1-${{ steps.version.outputs.version }}.zip firmware-devkitc1/
+          zip -r ../keebler-firmware-xiao-${{ steps.version.outputs.version }}.zip firmware-xiao/
+          zip -r ../keebler-firmware-generic-${{ steps.version.outputs.version }}.zip firmware-generic/
+          cd ..
+
+      # Create web app zip (everything needed to self-host)
+      - name: Create web app archive
+        run: |
+          # Copy fresh firmware binaries into web/firmware/ for the flasher
+          for board in devkitc1 xiao generic; do
+            mkdir -p web/firmware/$board
+            cp release/firmware-$board/* web/firmware/$board/
+          done
+          zip -r keebler-webapp-${{ steps.version.outputs.version }}.zip web/
+
+      # Create the release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: keeBLEr v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            keebler-firmware-devkitc1-${{ steps.version.outputs.version }}.zip
+            keebler-firmware-xiao-${{ steps.version.outputs.version }}.zip
+            keebler-firmware-generic-${{ steps.version.outputs.version }}.zip
+            keebler-webapp-${{ steps.version.outputs.version }}.zip
