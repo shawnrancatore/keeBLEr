@@ -71,10 +71,10 @@ keeBLEr has two extended tiers that add capabilities on top of the base:
 All three tiers share the same firmware and ES module codebase. See [keeBLEr AV docs](docs/av-mode.md) and [keeBLEr64 docs](docs/c64-mode.md) for details.
 
 ### Origin story
+<img width="650" height="413" alt="keebler64_screen" src="https://github.com/user-attachments/assets/6a39208b-75e7-4f94-9280-5f4de6fd5fa8" />
 
 keeBLEr was built to solve a specific problem: controlling a [Commodore 64 Ultimate](https://ultimate64.com/) from a main PC without swapping keyboards. The [keeBLEr64](docs/c64-mode.md) tier adds HDMI capture to see the C64 screen, a WiFi BLE-to-HTTP proxy to control the C64 Ultimate's API without Docker, file drag-and-drop, and a Commodore-inspired theme. It worked on the first try — boot protocol keyboard mode ensures compatibility with the C64 Ultimate's minimal 
 USB HID stack.
-<img width="650" height="413" alt="keebler64_screen" src="https://github.com/user-attachments/assets/6a39208b-75e7-4f94-9280-5f4de6fd5fa8" />
 ## HID modes
 
 Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
