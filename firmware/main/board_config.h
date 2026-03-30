@@ -7,16 +7,17 @@
  * Default: BOARD_DEVKITC1
  *
  * Pin assignments summary
- * ----------------------------------------------------------------------------------
- * Signal          | DevKitC-1 (GPIO) | XIAO ESP32S3 (GPIO) | Generic S3 (GPIO)
- * ----------------------------------------------------------------------------------
- * Status LED      | 48 (active-high) | 21 (active-low)     | (none)
- * UART TX         | 17               | 1  (D0/A0 pad)      | 17
- * UART RX         | 18               | 2  (D1/A1 pad)      | 18
- * BOOT button     | 0                | 0                    | 0
- * USB D+          | 20               | 20                   | 20
- * USB D-          | 19               | 19                   | 19
- * ----------------------------------------------------------------------------------
+ * --------------------------------------------------------------------------------------------
+ * Signal          | DevKitC-1 (GPIO) | XIAO ESP32S3 (GPIO) | QT Py S3 (GPIO) | Generic S3
+ * --------------------------------------------------------------------------------------------
+ * Status LED      | 48 (WS2812)      | 21 (active-low)     | 39 (NeoPixel)   | (none)
+ * LED power gate  | (n/a)            | (n/a)               | 38              | (n/a)
+ * UART TX         | 17               | 1  (D0/A0 pad)      | 5  (A3/SCK)     | 17
+ * UART RX         | 18               | 2  (D1/A1 pad)      | 16 (A2/MISO)    | 18
+ * BOOT button     | 0                | 0                    | 0               | 0
+ * USB D+          | 20               | 20                   | 20              | 20
+ * USB D-          | 19               | 19                   | 19              | 19
+ * --------------------------------------------------------------------------------------------
  */
 
 #ifndef KEEBLER_BOARD_CONFIG_H
@@ -32,10 +33,11 @@ extern "C" {
 /* Define one of:
  *   BOARD_DEVKITC1   - ESP32-S3-DevKitC-1 (development)
  *   BOARD_XIAO_S3    - Seeed XIAO ESP32S3 (production)
+ *   BOARD_QTPY_S3    - Adafruit QT Py ESP32-S3
  *   BOARD_GENERIC_S3 - Generic ESP32-S3 devboard
  * Default to BOARD_DEVKITC1 if none is defined. */
 
-#if !defined(BOARD_DEVKITC1) && !defined(BOARD_XIAO_S3) && !defined(BOARD_GENERIC_S3)
+#if !defined(BOARD_DEVKITC1) && !defined(BOARD_XIAO_S3) && !defined(BOARD_QTPY_S3) && !defined(BOARD_GENERIC_S3)
 #define BOARD_DEVKITC1
 #endif
 
@@ -93,6 +95,37 @@ extern "C" {
 #define BOARD_USB_DM_PIN    19
 
 #endif /* BOARD_XIAO_S3 */
+
+/* ---------- Adafruit QT Py ESP32-S3 configuration ---------- */
+
+#ifdef BOARD_QTPY_S3
+
+#define BOARD_NAME          "QT Py ESP32-S3"
+#define BOARD_TYPE          KB_BOARD_QTPY_S3
+
+/* NeoPixel LED on GPIO 39, powered by gate on GPIO 38.
+ * The NeoPixel requires the led_strip driver (WS2812).
+ * For simplicity, we disable LED and use GPIO 38 as a power indicator. */
+#define BOARD_HAS_LED       0
+#define BOARD_NEOPIXEL_PIN  39
+#define BOARD_NEOPIXEL_PWR  38
+
+/* UART transport pins.
+ * QT Py exposes SPI pins that we repurpose for UART:
+ * GPIO 5 (SCK/A3) for TX, GPIO 16 (MISO/A2) for RX.
+ * These are on the header pads and accessible. */
+#define BOARD_UART_NUM      UART_NUM_1
+#define BOARD_UART_TX_PIN   5
+#define BOARD_UART_RX_PIN   16
+
+/* Boot button — GPIO 0, labeled "BOOT" on QT Py */
+#define BOARD_BOOT_BTN_PIN  0
+
+/* USB: built-in USB-OTG (same as all ESP32-S3) */
+#define BOARD_USB_DP_PIN    20
+#define BOARD_USB_DM_PIN    19
+
+#endif /* BOARD_QTPY_S3 */
 
 /* ---------- Generic ESP32-S3 configuration ---------- */
 

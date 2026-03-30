@@ -54,6 +54,21 @@ jobs:
           cp firmware/build/partition_table/partition-table.bin release/firmware-xiao/
           cp firmware/build/keebler.bin release/firmware-xiao/
 
+      - name: Build QT Py firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: firmware
+          command: idf.py -DKEEBLER_BOARD=qtpy build
+
+      - name: Package QT Py firmware
+        run: |
+          mkdir -p release/firmware-qtpy
+          cp firmware/build/bootloader/bootloader.bin release/firmware-qtpy/
+          cp firmware/build/partition_table/partition-table.bin release/firmware-qtpy/
+          cp firmware/build/keebler.bin release/firmware-qtpy/
+
       - name: Build Generic firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -82,7 +97,7 @@ jobs:
       - name: Create web app archive
         run: |
           # Copy fresh firmware binaries into web/firmware/ for the flasher
-          for board in devkitc1 xiao generic; do
+          for board in devkitc1 xiao qtpy generic; do
             mkdir -p web/firmware/$board
             cp release/firmware-$board/* web/firmware/$board/
           done
@@ -97,5 +112,6 @@ jobs:
           files: |
             keebler-firmware-devkitc1-${{ steps.version.outputs.version }}.zip
             keebler-firmware-xiao-${{ steps.version.outputs.version }}.zip
+            keebler-firmware-qtpy-${{ steps.version.outputs.version }}.zip
             keebler-firmware-generic-${{ steps.version.outputs.version }}.zip
             keebler-webapp-${{ steps.version.outputs.version }}.zip

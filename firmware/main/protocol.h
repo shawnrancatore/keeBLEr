@@ -86,6 +86,7 @@ extern "C" {
 #define KB_BOARD_DEVKITC1       1
 #define KB_BOARD_XIAO_S3        2
 #define KB_BOARD_GENERIC_S3     3
+#define KB_BOARD_QTPY_S3        4
 
 /* ---------- Transport types ---------- */
 
