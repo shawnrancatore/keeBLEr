@@ -94,6 +94,8 @@ Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
 | ESP32-S3 SuperMini | `-DKEEBLER_BOARD=supermini` | Tiny (22.5×18mm) with WS2812 RGB status LED on GPIO 48, 4MB flash, 2MB PSRAM, external antenna option. See [espboards.dev](https://www.espboards.dev/esp32/esp32-s3-super-mini/) |
 | Any ESP32-S3 with USB | `-DKEEBLER_BOARD=generic` | No LED/button assumptions |
 
+The LED behaviour is documented in detail in [docs/led-status.md](docs/led-status.md). On RGB-equipped boards (SuperMini), the LED uses a layered colour scheme — blue for BLE, green for WiFi, cyan for both, magenta heartbeat for HID — plus a working spinner and double-blink result indicators for scan/connect operations.
+
 ## Serve the web app yourself
 
 The hosted GitHub Pages version works for most people. For self-hosting:
