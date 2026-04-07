@@ -29,6 +29,7 @@
 #include "ble_transport.h"
 #include "serial_transport.h"
 #include "wifi_proxy.h"
+#include "led_status.h"
 
 static const char *TAG = "keebler";
 
@@ -211,7 +212,15 @@ static void hid_process_task(void *param)
         if (xQueueReceive(s_packet_queue, &qp, portMAX_DELAY) == pdTRUE) {
             esp_err_t err = hid_bridge_process_packet(&qp.packet);
             if (err == ESP_OK) {
+                /* Successful packet clears any prior latched error so the
+                 * status LED can leave the error state when things recover. */
+                s_last_error = 0;
                 send_ack(KB_ACK_OK, qp.transport);
+            } else if (err == ESP_ERR_INVALID_STATE) {
+                /* Transient: USB host hasn't mounted the HID device yet, or
+                 * the host's IN endpoint is busy. Don't latch this as a hard
+                 * error — it would otherwise stick the status LED red. */
+                send_ack(KB_ACK_ERR_HID_FAIL, qp.transport);
             } else {
                 s_last_error = KB_ACK_ERR_HID_FAIL;
                 send_ack(KB_ACK_ERR_HID_FAIL, qp.transport);
@@ -220,33 +229,10 @@ static void hid_process_task(void *param)
     }
 }
 
-/* ========================================================================= */
-/*  LED                                                                       */
-/* ========================================================================= */
-
-#if BOARD_HAS_LED
-static void led_set(bool on)
-{
-#ifdef BOARD_XIAO_S3
-    gpio_set_level(BOARD_LED_PIN, on ? 0 : 1); /* Active-low */
-#else
-    gpio_set_level(BOARD_LED_PIN, on ? 1 : 0);
-#endif
-}
-
-static void led_init(void)
-{
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BOARD_LED_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf);
-    led_set(false); /* Start with LED off, respecting polarity */
-}
-#endif
+/* ========================================================================= *
+ *  LED status — uses the led_status module which handles GPIO/WS2812 LEDs   *
+ *  See led_status.c for color/animation logic.                              *
+ * ========================================================================= */
 
 /* ========================================================================= */
 /*  BOOT Button (GPIO 0)                                                      */
@@ -294,11 +280,9 @@ void app_main(void)
              s_hid_mode,
              s_hid_mode == HID_MODE_BOOT_KB ? "boot keyboard" : "composite");
 
-    /* Initialize LED */
-#if BOARD_HAS_LED
-    led_init();
-    ESP_LOGI(TAG, "Status LED on GPIO %d", BOARD_LED_PIN);
-#endif
+    /* Initialize LED status indicator. The LED task starts ticking immediately
+     * and reflects the link/hid flags we set later in the boot sequence. */
+    led_status_init();
 
     /* Initialize BOOT button */
     boot_btn_init();
@@ -381,32 +365,19 @@ void app_main(void)
         }
         btn_raw_prev = btn_raw;
 
-        /* ---- LED patterns ---- */
-#if BOARD_HAS_LED
+        /* ---- LED status ----
+         * Push the current link/HID flags into the LED layer. The LED task
+         * runs at 50 ms in the background; we just keep its inputs fresh. */
         bool ble_connected = kb_ble_is_connected();
-        bool usb_ready = hid_bridge_is_ready();
+        uint8_t wifi_state = kb_wifi_get_state();
+        bool wifi_sta = (wifi_state == KB_WIFI_STATE_CONNECTED);
+        bool wifi_ap  = (wifi_state == KB_WIFI_STATE_AP_ACTIVE);
+        bool wifi_err = (wifi_state == KB_WIFI_STATE_ERROR);
+        bool ap_has_client = kb_wifi_get_ap_client_count() > 0;
 
-        if (usb_ready && ble_connected) {
-            /* Fully operational: solid ON */
-            led_set(true);
-        } else if (ble_connected) {
-            /* BLE connected, no USB: fast blink ~4Hz (toggle every 50ms,
-             * but our loop runs every 200ms so toggle each iteration) */
-            led_set((loop_count % 2) == 0);
-        } else {
-            /* Idle: mode indication pattern (2-second period = 10 ticks at 200ms)
-             * Mode 0 (boot KB): single short flash every 2 seconds
-             * Mode 1 (composite): double flash every 2 seconds */
-            uint32_t phase = loop_count % 10;
-            if (s_hid_mode == HID_MODE_BOOT_KB) {
-                /* Single flash at phase 0 */
-                led_set(phase == 0);
-            } else {
-                /* Double flash at phase 0 and phase 2 */
-                led_set(phase == 0 || phase == 2);
-            }
-        }
-#endif
+        led_status_set_link(ble_connected, wifi_sta, wifi_ap, ap_has_client,
+                            (s_last_error != 0) || wifi_err);
+        led_status_set_hid_mounted(hid_bridge_is_ready());
 
         /* ---- Periodic status log ---- */
         if (loop_count % 150 == 0) {

@@ -45,6 +45,19 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport);
  */
 bool kb_wifi_is_connected(void);
 
+/**
+ * Get the current WiFi state (KB_WIFI_STATE_* from protocol.h).
+ * Useful for the LED status indicator to distinguish STA vs AP mode.
+ */
+uint8_t kb_wifi_get_state(void);
+
+/**
+ * Number of clients currently associated with the WiFi AP.
+ * Returns 0 when AP mode is off or has no clients. Used by the LED status
+ * layer to distinguish "AP listening" from "AP with client connected".
+ */
+uint8_t kb_wifi_get_ap_client_count(void);
+
 #ifdef __cplusplus
 }
 #endif

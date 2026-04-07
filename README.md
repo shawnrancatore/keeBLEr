@@ -91,6 +91,7 @@ Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
 | ESP32-S3-DevKitC-1 | default | Dual USB for easy development |
 | Seeed XIAO ESP32S3 | `-DKEEBLER_BOARD=xiao` | Tiny (21×17mm), [buy](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) |
 | Adafruit QT Py ESP32-S3 | `-DKEEBLER_BOARD=qtpy` | Tiny with STEMMA QT, [buy](https://www.adafruit.com/product/5426) |
+| ESP32-S3 SuperMini | `-DKEEBLER_BOARD=supermini` | Tiny (22.5×18mm) with WS2812 RGB status LED on GPIO 48, 4MB flash, 2MB PSRAM, external antenna option. See [espboards.dev](https://www.espboards.dev/esp32/esp32-s3-super-mini/) |
 | Any ESP32-S3 with USB | `-DKEEBLER_BOARD=generic` | No LED/button assumptions |
 
 ## Serve the web app yourself

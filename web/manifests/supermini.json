@@ -1,0 +1,14 @@
+{
+  "name": "keeBLEr — ESP32-S3 SuperMini",
+  "version": "1.3.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "../firmware/supermini/bootloader.bin", "offset": 0 },
+        { "path": "../firmware/supermini/partition-table.bin", "offset": 32768 },
+        { "path": "../firmware/supermini/keebler.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

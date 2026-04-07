@@ -23,6 +23,7 @@ jobs:
           - { name: devkitc1, flag: "" }
           - { name: xiao, flag: "-DKEEBLER_BOARD=xiao" }
           - { name: qtpy, flag: "-DKEEBLER_BOARD=qtpy" }
+          - { name: supermini, flag: "-DKEEBLER_BOARD=supermini" }
           - { name: generic, flag: "-DKEEBLER_BOARD=generic" }
 
     name: Build ${{ matrix.board.name }}
@@ -65,7 +66,7 @@ jobs:
 
       - name: Copy binaries to web/firmware/
         run: |
-          for board in devkitc1 xiao qtpy generic; do
+          for board in devkitc1 xiao qtpy supermini generic; do
             mkdir -p web/firmware/$board
             # Find the binaries wherever the artifact unpacked them
             find artifacts/firmware-$board -name "bootloader.bin" -exec cp {} web/firmware/$board/ \;

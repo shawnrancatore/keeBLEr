@@ -10,6 +10,7 @@
 #include "board_config.h"
 #include "ble_transport.h"
 #include "serial_transport.h"
+#include "led_status.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -115,6 +116,14 @@ typedef struct {
 static uint8_t  s_wifi_state = KB_WIFI_STATE_OFF;
 static esp_ip4_addr_t s_ip_addr;
 static char     s_connected_ssid[33];
+/* Number of stations currently associated with the AP. Updated from the
+ * WIFI_EVENT_AP_STA{,DIS}CONNECTED handlers. Used by the LED layer. */
+static uint8_t  s_ap_client_count = 0;
+/* Set when do_wifi_connect() kicks off an explicit connect via BLE/UART so
+ * that the next STA_CONNECTED / STA_DISCONNECTED event can drive the LED
+ * indication (success vs auth-fail vs other-fail). Auto-clears once handled
+ * so spontaneous reconnects do not flash the LED. */
+static bool     s_explicit_connect_pending = false;
 
 static uint8_t  s_token[KB_WIFI_TOKEN_LEN];
 static bool     s_token_valid = false;
@@ -343,14 +352,32 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGW(TAG, "WiFi disconnected, reason=%d", ev->reason);
             s_wifi_state = KB_WIFI_STATE_DISCONNECTED;
             memset(&s_ip_addr, 0, sizeof(s_ip_addr));
+            /* If this disconnect was the result of an explicit user-initiated
+             * connect attempt, drive the LED indication based on the reason
+             * code. Auth-related reasons fire FAIL_AUTH; everything else is
+             * a generic FAIL. Spontaneous reconnects do not trigger this. */
+            if (s_explicit_connect_pending) {
+                s_explicit_connect_pending = false;
+                bool auth_fail =
+                    (ev->reason == WIFI_REASON_AUTH_EXPIRE) ||
+                    (ev->reason == WIFI_REASON_AUTH_FAIL) ||
+                    (ev->reason == WIFI_REASON_HANDSHAKE_TIMEOUT) ||
+                    (ev->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT) ||
+                    (ev->reason == WIFI_REASON_NOT_AUTHED) ||
+                    (ev->reason == WIFI_REASON_NOT_ASSOCED);
+                led_status_indicate(auth_fail ? KB_LED_IND_FAIL_AUTH
+                                              : KB_LED_IND_FAIL);
+            }
             break;
         }
         case WIFI_EVENT_AP_START:
             ESP_LOGI(TAG, "WiFi AP started");
             s_wifi_state = KB_WIFI_STATE_AP_ACTIVE;
+            s_ap_client_count = 0;
             break;
         case WIFI_EVENT_AP_STOP:
             ESP_LOGI(TAG, "WiFi AP stopped");
+            s_ap_client_count = 0;
             if (s_ap_mode) {
                 s_wifi_state = KB_WIFI_STATE_DISCONNECTED;
             }
@@ -359,6 +386,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             wifi_event_ap_staconnected_t *ev = (wifi_event_ap_staconnected_t *)event_data;
             ESP_LOGI(TAG, "AP: client connected, MAC=" MACSTR " aid=%d",
                      MAC2STR(ev->mac), ev->aid);
+            if (s_ap_client_count < 255) s_ap_client_count++;
             /* Notify browser: event(1) mac(6) — IP comes later via DHCP */
             uint8_t payload[7];
             payload[0] = KB_WIFI_AP_CLIENT_CONNECTED;
@@ -370,6 +398,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         case WIFI_EVENT_AP_STADISCONNECTED: {
             wifi_event_ap_stadisconnected_t *ev = (wifi_event_ap_stadisconnected_t *)event_data;
             ESP_LOGI(TAG, "AP: client disconnected, MAC=" MACSTR, MAC2STR(ev->mac));
+            if (s_ap_client_count > 0) s_ap_client_count--;
             uint8_t payload[7];
             payload[0] = KB_WIFI_AP_CLIENT_DISCONNECTED;
             memcpy(&payload[1], ev->mac, 6);
@@ -385,6 +414,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_ip_addr = ev->ip_info.ip;
         s_wifi_state = KB_WIFI_STATE_CONNECTED;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&s_ip_addr));
+        /* Successfully got an IP after a user-initiated connect: flash the
+         * success indication. The base colour will then settle to BLE+STA
+         * (cyan) or STA-only (green) on the next main-loop tick. */
+        if (s_explicit_connect_pending) {
+            s_explicit_connect_pending = false;
+            led_status_indicate(KB_LED_IND_SUCCESS);
+        }
     }
 }
 
@@ -535,8 +571,12 @@ static void do_wifi_ap_start(const char *ssid, const char *pass, uint8_t transpo
 
 static void do_wifi_scan(uint8_t transport)
 {
+    /* Tell the LED layer we're busy. Cleared on success/fail below. */
+    led_status_indicate(KB_LED_IND_WORKING);
+
     esp_err_t err = wifi_sta_init();
     if (err != ESP_OK) {
+        led_status_indicate(KB_LED_IND_FAIL);
         send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
         return;
     }
@@ -553,6 +593,7 @@ static void do_wifi_scan(uint8_t transport)
     err = esp_wifi_scan_start(&scan_cfg, true /* block */);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "WiFi scan start failed: %s", esp_err_to_name(err));
+        led_status_indicate(KB_LED_IND_FAIL);
         send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
         return;
     }
@@ -603,6 +644,9 @@ static void do_wifi_scan(uint8_t transport)
     uint8_t done_payload = (uint8_t)ap_count;
     send_response(KB_PKT_WIFI_SCAN_DONE, &done_payload, 1, transport);
 
+    /* Scan finished cleanly: flash success and clear the spinner. */
+    led_status_indicate(KB_LED_IND_SUCCESS);
+
     ESP_LOGI(TAG, "WiFi scan complete: %d APs found", ap_count);
 }
 
@@ -612,13 +656,23 @@ static void do_wifi_scan(uint8_t transport)
 
 static void do_wifi_connect(const char *ssid, const char *pass, uint8_t transport)
 {
+    /* Start the working spinner immediately. The pending flag is armed
+     * LATER, after any cleanup disconnect, to avoid a race where the
+     * cleanup's STA_DISCONNECTED event would falsely fire a FAIL on the LED.
+     * On every fail path below we both clear the flag and replace WORKING
+     * with the appropriate result indication. */
+    led_status_indicate(KB_LED_IND_WORKING);
+
     esp_err_t err = wifi_sta_init();
     if (err != ESP_OK) {
+        led_status_indicate(KB_LED_IND_FAIL);
         send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
         return;
     }
 
-    /* Disconnect first if already connected */
+    /* Disconnect first if already connected. This will fire a STA_DISCONNECTED
+     * event which we don't want to mistake for the result of THIS attempt --
+     * hence why s_explicit_connect_pending is still false here. */
     if (s_wifi_state == KB_WIFI_STATE_CONNECTED ||
         s_wifi_state == KB_WIFI_STATE_CONNECTING) {
         esp_wifi_disconnect();
@@ -637,14 +691,21 @@ static void do_wifi_connect(const char *ssid, const char *pass, uint8_t transpor
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "WiFi set config failed: %s", esp_err_to_name(err));
         s_wifi_state = KB_WIFI_STATE_ERROR;
+        led_status_indicate(KB_LED_IND_FAIL);
         send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
         return;
     }
+
+    /* Now arm the result indication: the next STA event determines the
+     * outcome of this attempt. */
+    s_explicit_connect_pending = true;
 
     err = esp_wifi_connect();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "WiFi connect failed: %s", esp_err_to_name(err));
         s_wifi_state = KB_WIFI_STATE_ERROR;
+        s_explicit_connect_pending = false;
+        led_status_indicate(KB_LED_IND_FAIL);
         send_ack(KB_ACK_ERR_WIFI_FAIL, transport);
         return;
     }
@@ -1241,7 +1302,8 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport)
 
         /* Grow body buffer */
         if (s_http_assembly.body == NULL) {
-            size_t cap = pkt->length < 256 ? 256 : pkt->length;
+            /* pkt->length is uint8_t so always <= 255; use 256 as initial cap */
+            size_t cap = 256;
             if (cap > KB_WIFI_MAX_BODY_LEN) cap = KB_WIFI_MAX_BODY_LEN;
             s_http_assembly.body = malloc(cap);
             if (s_http_assembly.body == NULL) {
@@ -1356,4 +1418,14 @@ bool kb_wifi_is_connected(void)
 {
     return (s_wifi_state == KB_WIFI_STATE_CONNECTED ||
             s_wifi_state == KB_WIFI_STATE_AP_ACTIVE) && s_ip_addr.addr != 0;
+}
+
+uint8_t kb_wifi_get_state(void)
+{
+    return s_wifi_state;
+}
+
+uint8_t kb_wifi_get_ap_client_count(void)
+{
+    return s_ap_client_count;
 }
