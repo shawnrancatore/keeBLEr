@@ -2,6 +2,10 @@
 
 **keeBLEr** = keyboard **BLE** enabler
 
+<!-- bricoleur:intro -->
+> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand.
+<!-- /bricoleur:intro -->
+
 A wireless keyboard bridge. Plug a tiny ESP32-S3 board into any computer's USB port, open a browser on your other computer, and type — wirelessly, over Bluetooth Low Energy. No drivers, no pairing menus, no apps to install.
 
 ```
@@ -46,6 +50,8 @@ The ESP32-S3's USB port plugs into the computer you want to control. It shows up
 Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing.
 
 On subsequent visits, it auto-connects to your paired device.
+
+**The full guide**, from parts to protocol, is at [bricoleur.ai/projects/keebler](https://bricoleur.ai/projects/keebler).
 
 ## Features
 
@@ -176,6 +182,12 @@ keebler/
 
 The generic target works on most ESP32-S3 boards out of the box.
 
+## What it doesn't do
+
+- It does not pair with the target over Bluetooth. The target only ever sees a USB keyboard (and, in composite mode, a mouse), so it needs a free USB port.
+- It needs a Chromium browser (Chrome, Edge or Brave) on the controlling computer.
+- Boot keyboard mode has no mouse. That is the price of working everywhere.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -188,3 +200,8 @@ The generic target works on most ESP32-S3 boards out of the box.
 ## License
 
 [MIT](LICENSE)
+
+<!-- bricoleur:footer -->
+---
+Part of **[bricoleur.ai](https://bricoleur.ai)** · [Full guide](https://bricoleur.ai/projects/keebler) · MIT © 2026 Shawn Rancatore
+<!-- /bricoleur:footer -->
