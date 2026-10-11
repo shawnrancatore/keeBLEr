@@ -71,6 +71,9 @@ If the C64 Ultimate's firmware is modified to send CORS headers, or if you use a
 - All WiFi and HTTP proxy commands require the token
 - The token expires after approximately 60 device reboots without use (sliding expiration)
 - **Forget** clears the token and stored WiFi credentials from both sides
+- The board's WiFi settings belong to the browser that set them up. The board changes or forgets them only for a request that carries that browser's token. A browser without the token (another browser, or cleared site data) cannot change them.
+- After 60 power-ups in a row without a request that carries the valid token, the board erases the token and the saved WiFi credentials, and the next browser can set WiFi up again.
+- Over BLE, WiFi and HTTP replies go only to a connection that has passed the [connect window](../README.md#connect-window-and-session-pass-protocol-2-firmware-140) check.
 
 ## File transfer
 
