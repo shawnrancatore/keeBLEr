@@ -47,9 +47,9 @@ The ESP32-S3's USB port plugs into the computer you want to control. It shows up
 
 ### 3. Open the web app
 
-Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing. Do this within 60 seconds of plugging the board in: the first browser to connect in that time claims the board (see [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140)).
+Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing. Do this within 60 seconds of plugging the board in: the first browser to connect in that time claims the board (see [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140)). If you miss it, the LED shows two short blue blinks every 2 seconds: unplug the board, plug it back in, and connect again.
 
-On subsequent visits, it auto-connects to your paired device.
+On later visits the web app reconnects on its own while the board has stayed powered. After the board has been unplugged, open the web app within 60 seconds of plugging it back in (it reconnects on its own), or click **Connect BLE** within that time.
 
 **The full guide**, from parts to protocol, is at [bricoleur.ai/projects/keebler](https://bricoleur.ai/projects/keebler).
 
@@ -58,7 +58,7 @@ On subsequent visits, it auto-connects to your paired device.
 - **Wireless keyboard and mouse** — BLE GATT, no line-of-sight needed, ~10m range
 - **Universal compatibility** — boot protocol keyboard works in BIOS, UEFI, KVMs, retro computers
 - **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
-- **Auto-reconnect** — reconnects automatically on page load, survives device reboots
+- **Auto-reconnect** — reconnects automatically on page load, and after the board restarts if the browser gets back within the 60-second connect window
 - **No install** — runs in any Chromium browser (Chrome, Edge, Brave) over HTTPS
 - **Web Serial fallback** — UART transport for development and recovery
 - **Browser-based flasher** — flash firmware without installing a toolchain
@@ -83,7 +83,7 @@ keeBLEr was built to solve a specific problem: controlling a [Commodore 64 Ultim
 USB HID stack.
 ## HID modes
 
-Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
+Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots. Changing the mode restarts the board, which ends the connection and opens a new 60-second connect window; an open web app reconnects on its own.
 
 | Mode | Description | Compatibility |
 |------|-------------|---------------|
@@ -158,17 +158,19 @@ A frame longer than the connection allows in one notification (the ATT MTU minus
 
 ### Connect window and session pass (protocol 2, firmware 1.4.0)
 
-For 60 seconds after power-up, the board gives the first browser that connects a session pass: 16 random bytes, kept in RAM only. From then until power-off, it serves only a connection that presents that pass.
+Plug the board in, then connect from your browser within a minute. That browser now owns the board until it is unplugged, and other browsers and devices are refused. To hand the board to a different browser, or when the LED shows two short blue blinks, unplug the board and plug it back in.
 
-- The browser sends AUTH as its first packet: empty the first time, the stored pass afterwards.
+For 60 seconds after power-up, the board gives the first browser that connects a session pass: 16 random bytes, kept in RAM only. From then until power-off, it serves only a connection that presents that pass. In more detail:
+
+- The web app sends AUTH as its first packet: empty the first time, the stored pass afterwards. While the window is open and no pass has been issued, the board grants any AUTH and ignores the bytes sent, which is how a browser that still holds an old pass is granted a new one after a restart.
 - AUTH_RESULT status: `0x00` OK (the pass matched), `0x01` GRANTED (a new pass follows), `0x02` DENIED (the board disconnects about 200 ms later).
 - Before AUTH succeeds, the board accepts only STATUS_REQUEST, AUTH and HEARTBEAT. Anything else gets ACK `0x20` NOT_AUTHENTICATED.
 - A connection that has not authenticated within 5 seconds is dropped.
 - STATUS_RESPONSE flags: bit 0 the window is open and no browser has claimed the board yet, bit 1 a pass has been issued, bit 2 this connection is authenticated.
-- The wired serial path is not gated.
+- The wired serial path is not gated: anything wired to the board's UART pins can type without a pass.
 - A power cycle, including the restart after a BOOT mode switch, clears the pass and opens a new window.
 
-**What this does not do.** The link is still unencrypted: someone with a Bluetooth sniffer nearby can read keystrokes, and can capture the pass during a connection. Someone who can power-cycle the board can claim it. The window stops a stranger's phone or laptop from connecting and typing, and from holding the board's one connection.
+**What this does not do.** It is not encryption and not pairing. The link is still unencrypted: someone with a Bluetooth sniffer nearby can read keystrokes, and can capture the pass during a connection. Whoever connects first within the 60 seconds gets the board; if someone else's browser gets there before yours, it holds the board until the next power cycle. Anyone who can power-cycle the board can claim it. A device without the pass cannot type and is disconnected within about 5 seconds, but the board takes one connection at a time, so a device that keeps reconnecting can get in the way of yours. What the window does stop is a stranger's phone or laptop connecting and typing.
 
 ## Project structure
 
@@ -203,7 +205,8 @@ The generic target works on most ESP32-S3 boards out of the box.
 ## What it doesn't do
 
 - It does not pair with the target over Bluetooth. The target only ever sees a USB keyboard (and, in composite mode, a mouse), so it needs a free USB port.
-- Only the first browser to connect within 60 seconds of power-up can type, and only until the board is powered off. The Bluetooth link is not encrypted, so someone nearby with a sniffer can read your keystrokes.
+- Only the first browser to connect within 60 seconds of power-up can type, and only until the board is powered off. This is not encryption or pairing: the Bluetooth link is not encrypted, so someone nearby with a sniffer can read your keystrokes and capture the pass, and anyone who can power-cycle the board can claim it. See [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140).
+- The board's Wi-Fi settings (keeBLEr64) are tied to the browser that set them up. See [WiFi security](docs/c64-mode.md#wifi-security).
 - It needs a Chromium browser (Chrome, Edge or Brave) on the controlling computer.
 - Boot keyboard mode has no mouse. That is the price of working everywhere.
 
@@ -214,7 +217,7 @@ The generic target works on most ESP32-S3 boards out of the box.
 | `ACK error 0x03` | USB HID not mounted — wait ~10s for enumeration, check cable |
 | BLE won't connect | Ensure HTTPS, use Chrome/Edge |
 | XIAO shows as `303a:1001` after flash | Unplug and replug |
-| "Not authorised", or the LED double-blinks | Another browser claimed the board, or nobody connected in the first 60 seconds. Unplug the board, plug it back in, and connect within 60 seconds |
+| The web app says "Not authorised", or the LED shows two short blue blinks every 2 seconds | Another browser claimed the board, this browser lost its saved pass (cleared site data, or a different browser or profile), or nobody connected in the first 60 seconds. Unplug the board, plug it back in, and connect within 60 seconds |
 | Keys stuck after disconnect | Fixed in firmware — auto key-release on BLE disconnect |
 
 ## License
