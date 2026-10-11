@@ -22,6 +22,8 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
+#include "esp_timer.h"
+#include "esp_random.h"
 
 #include "board_config.h"
 #include "protocol.h"
@@ -30,6 +32,7 @@
 #include "serial_transport.h"
 #include "wifi_proxy.h"
 #include "led_status.h"
+#include "auth.h"
 
 static const char *TAG = "keebler";
 
@@ -42,6 +45,17 @@ static uint8_t s_last_error = 0;
 
 /* Current HID mode (read from NVS at startup) */
 static uint8_t s_hid_mode = HID_MODE_BOOT_KB;
+
+/* Connect window and session pass. Touched from the NimBLE host task (link
+ * events, AUTH packets) and from the main loop (deadline, LED), so every
+ * access is inside s_auth_mux. The sections are a few instructions long. */
+static kb_auth_t s_auth;
+static portMUX_TYPE s_auth_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static uint64_t now_ms(void)
+{
+    return (uint64_t)(esp_timer_get_time() / 1000);
+}
 
 /* =========================================================================
  * Packet Queue -- decouples BLE/UART receive from USB HID send
@@ -133,11 +147,24 @@ static void send_ack(uint8_t status, uint8_t transport)
 
 static void send_status_response(uint8_t transport)
 {
+    uint64_t t = now_ms();
+    taskENTER_CRITICAL(&s_auth_mux);
+    uint8_t flags = kb_auth_flags(&s_auth, t);
+    taskEXIT_CRITICAL(&s_auth_mux);
+
+    if (transport == KB_TRANSPORT_UART) {
+        /* The wired path is not gated. */
+        flags |= KB_STATUS_FLAG_AUTHENTICATED;
+    } else if (transport != KB_TRANSPORT_BLE) {
+        flags &= (uint8_t)~KB_STATUS_FLAG_AUTHENTICATED;
+    }
+
     kb_status_response_t resp = {
         .version    = KB_PROTOCOL_VERSION,
         .board_type = BOARD_TYPE,
         .transport  = transport,
         .last_error = s_last_error,
+        .flags      = flags,
     };
     send_response(KB_PKT_STATUS_RESPONSE, (const uint8_t *)&resp,
                   KB_STATUS_RESPONSE_LEN, transport);
@@ -154,9 +181,102 @@ typedef struct {
 static transport_ctx_t s_ble_ctx  = { .transport = KB_TRANSPORT_BLE };
 static transport_ctx_t s_uart_ctx = { .transport = KB_TRANSPORT_UART };
 
+/* Release every key, and in composite mode every mouse button. Reports from
+ * the link that just ended are stale, so the queue is emptied first: the
+ * release must not be lost behind them. Transport NONE means no ACK is sent.
+ * In boot-keyboard mode a mouse report is unsupported, so none is queued. */
+static void enqueue_release_all(void)
+{
+    if (s_packet_queue == NULL) {
+        return;
+    }
+    xQueueReset(s_packet_queue);
+
+    queued_packet_t qp;
+    memset(&qp, 0, sizeof(qp));
+    qp.transport = KB_TRANSPORT_NONE;
+    qp.packet.type = KB_PKT_KEYBOARD_REPORT;
+    qp.packet.length = KB_KEYBOARD_REPORT_LEN;
+    xQueueSend(s_packet_queue, &qp, 0);
+
+    if (s_hid_mode == HID_MODE_COMPOSITE) {
+        qp.packet.type = KB_PKT_MOUSE_REPORT;
+        qp.packet.length = KB_MOUSE_REPORT_LEN;
+        xQueueSend(s_packet_queue, &qp, 0);
+    }
+}
+
+/* Called from the NimBLE host task on connect and disconnect. */
+static void on_ble_link(bool connected, void *user_ctx)
+{
+    (void)user_ctx;
+    uint64_t t = now_ms();
+    taskENTER_CRITICAL(&s_auth_mux);
+    if (connected) {
+        kb_auth_on_connect(&s_auth, t);
+    } else {
+        kb_auth_on_disconnect(&s_auth);
+    }
+    taskEXIT_CRITICAL(&s_auth_mux);
+
+    if (!connected) {
+        enqueue_release_all();
+    }
+}
+
+static void handle_auth(const kb_packet_t *pkt, uint8_t transport)
+{
+    if (transport != KB_TRANSPORT_BLE) {
+        /* The wired path is not gated: answer OK and change nothing. */
+        uint8_t ok = KB_AUTH_RESULT_OK;
+        send_response(KB_PKT_AUTH_RESULT, &ok, 1, transport);
+        return;
+    }
+
+    uint8_t fresh[KB_AUTH_PASS_LEN];
+    esp_fill_random(fresh, sizeof(fresh));
+
+    uint8_t resp[1 + KB_AUTH_PASS_LEN];
+    uint8_t resp_len = 1;
+    uint64_t t = now_ms();
+
+    taskENTER_CRITICAL(&s_auth_mux);
+    resp[0] = kb_auth_handle(&s_auth, t, pkt->payload, pkt->length, fresh);
+    if (resp[0] == KB_AUTH_RESULT_GRANTED) {
+        memcpy(&resp[1], s_auth.pass, KB_AUTH_PASS_LEN);
+        resp_len = sizeof(resp);
+    }
+    taskEXIT_CRITICAL(&s_auth_mux);
+
+    send_response(KB_PKT_AUTH_RESULT, resp, resp_len, transport);
+
+    /* Never log the pass itself. */
+    if (resp[0] == KB_AUTH_RESULT_GRANTED) {
+        ESP_LOGI(TAG, "AUTH: granted a session pass (first browser in the window)");
+        led_status_indicate(KB_LED_IND_SUCCESS);
+    } else if (resp[0] == KB_AUTH_RESULT_OK) {
+        ESP_LOGI(TAG, "AUTH: pass accepted");
+    } else {
+        ESP_LOGW(TAG, "AUTH: denied; dropping the connection");
+        led_status_indicate(KB_LED_IND_FAIL_AUTH);
+    }
+}
+
 static void on_packet_received(const kb_packet_t *pkt, void *user_ctx)
 {
     transport_ctx_t *ctx = (transport_ctx_t *)user_ctx;
+
+    /* The gate. On BLE, a connection that has not authenticated may send only
+     * STATUS_REQUEST, AUTH and HEARTBEAT. The wired UART is exempt. */
+    if (ctx->transport == KB_TRANSPORT_BLE) {
+        taskENTER_CRITICAL(&s_auth_mux);
+        bool allowed = kb_auth_packet_allowed(&s_auth, pkt->type);
+        taskEXIT_CRITICAL(&s_auth_mux);
+        if (!allowed) {
+            send_ack(KB_ACK_ERR_NOT_AUTHENTICATED, ctx->transport);
+            return;
+        }
+    }
 
     /* Fast-path: status, heartbeat, echo are small and safe to handle inline */
     switch (pkt->type) {
@@ -172,6 +292,10 @@ static void on_packet_received(const kb_packet_t *pkt, void *user_ctx)
 
     case KB_PKT_ECHO:
         send_response(KB_PKT_ECHO, pkt->payload, pkt->length, ctx->transport);
+        return;
+
+    case KB_PKT_AUTH:
+        handle_auth(pkt, ctx->transport);
         return;
 
     case KB_PKT_KEYBOARD_REPORT:
@@ -305,7 +429,12 @@ void app_main(void)
     }
 
     /* Set BLE callback BEFORE init to avoid race with early connections */
+    /* The connect window opens now and lasts KB_AUTH_WINDOW_MS. */
+    kb_auth_init(&s_auth, now_ms());
+    ESP_LOGI(TAG, "Connect window open for %d s", (int)(KB_AUTH_WINDOW_MS / 1000));
+
     kb_ble_set_rx_callback(on_packet_received, &s_ble_ctx);
+    kb_ble_set_conn_callback(on_ble_link, NULL);
 
     /* Initialize BLE transport */
     ret = kb_ble_init();
@@ -364,6 +493,20 @@ void app_main(void)
             btn_prev = false;
         }
         btn_raw_prev = btn_raw;
+
+        /* ---- Connect window: drop a link that was refused, or that has not
+         * authenticated in time. The loop runs every 200 ms, which is fine
+         * for a 5 s deadline and a ~200 ms grace. ---- */
+        uint64_t t = now_ms();
+        taskENTER_CRITICAL(&s_auth_mux);
+        bool drop = kb_auth_should_drop(&s_auth, t);
+        uint8_t auth_flags = kb_auth_flags(&s_auth, t);
+        taskEXIT_CRITICAL(&s_auth_mux);
+        if (drop) {
+            ESP_LOGW(TAG, "Dropping an unauthenticated BLE connection");
+            kb_ble_disconnect();
+        }
+        (void)auth_flags; /* Task 5 feeds this to the LED */
 
         /* ---- LED status ----
          * Push the current link/HID flags into the LED layer. The LED task

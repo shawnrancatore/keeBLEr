@@ -24,13 +24,13 @@ extern "C" {
 /* ---------- Constants ---------- */
 
 #define KB_MAGIC                0x4B
-#define KB_PROTOCOL_VERSION     1
+#define KB_PROTOCOL_VERSION     2
 
 /* Firmware version — bump on every release */
 #define KB_VERSION_MAJOR        1
-#define KB_VERSION_MINOR        3
+#define KB_VERSION_MINOR        4
 #define KB_VERSION_PATCH        0
-#define KB_VERSION_STRING       "1.3.0"
+#define KB_VERSION_STRING       "1.4.0"
 #define KB_MAX_PAYLOAD          128
 /* Frame overhead: MAGIC(1) + LENGTH(1) + TYPE(1) + CRC8(1) = 4 */
 #define KB_FRAME_OVERHEAD       4
