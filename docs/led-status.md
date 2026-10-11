@@ -52,7 +52,7 @@ main loop, so the absolute upper bound on stale rendering is ~250 ms.
 | Situation | Colour |
 |---|---|
 | **Idle** — a browser has claimed the board and nothing is connected right now | Blue blink, ~1 Hz (100 ms on, 900 ms off) |
-| **Connect window open** | Fast blue blink (4 Hz): the first 60 seconds after power-up, until a browser claims the board. Connect now |
+| **Connect window open** | Fast blue blink (4 Hz): the first 60 seconds after the board starts, until a browser claims the board. Connect now |
 | **Window closed, never claimed** ("locked") | Two short blue blinks every 2 seconds: no browser connected in time, unplug the board and plug it back in |
 | **BLE connected**, no WiFi | Solid blue |
 | **BLE + WiFi AP active, no client yet** | Solid blue base, with a cyan flash followed by a yellow flash 500 ms later, repeating every 1 s |
@@ -83,7 +83,7 @@ fails an operation. They temporarily replace the base colour, then revert.
 | Indication | Colour | Duration | When fired |
 |---|---|---|---|
 | `WORKING`    | Soft spinning red → green → blue cycle, ~450 ms per full rotation | Loops until cleared (or ~30 s safety watchdog) | A WiFi scan or connect operation has started |
-| `SUCCESS`    | Double white blink | ~400 ms (one-shot) | Operation succeeded — scan returned, STA got an IP; or a browser was just granted the session pass (the first connection after power-up). A browser whose stored pass is accepted gets no blink |
+| `SUCCESS`    | Double white blink | ~400 ms (one-shot) | Operation succeeded — scan returned, STA got an IP; or a browser was just granted the session pass (it claimed the board). A browser whose stored pass is accepted gets no blink |
 | `FAIL_AUTH`  | Double yellow blink | ~400 ms (one-shot) | WiFi connect failed with an auth-related reason code (wrong password, EAPOL timeout, etc.); or the board refused a browser's AUTH (wrong pass, or the connect window was closed) |
 | `FAIL`       | Double red blink | ~400 ms (one-shot) | Any other operation failure (no AP found, set\_config failed, init failed) |
 
@@ -116,7 +116,7 @@ If the LED is...
 
 - **Fast blue blink (4 Hz)** → The connect window is open: the board was plugged in less than 60 seconds ago and no browser has claimed it. Open the keeBLEr web app and click Connect BLE now.
 - **Two short blue blinks every 2 seconds** → Nobody connected in time. Unplug the board, plug it back in, and connect within 60 seconds.
-- **Pulsing slow blue** → A browser has claimed the board and is not connected right now. Connect again from the same browser. A different browser has to wait for a power cycle.
+- **Pulsing slow blue** → A browser has claimed the board and is not connected right now. Connect again from the same browser. A different browser has to wait until the board restarts (unplug it and plug it back in).
 - **Solid blue** → BLE connected. The web app is talking to the device.
 - **Solid blue with cyan/yellow flashes** → BLE + AP mode active, waiting for someone to join the AP.
 - **Solid cyan** → BLE + WiFi (either AP-with-client or STA-connected). Everything is up.
