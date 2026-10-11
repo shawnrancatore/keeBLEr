@@ -454,20 +454,13 @@ function _handleTokenResponse(payload) {
     storeToken(token);
     log('info', `WiFi token ${hasCreds ? 'valid (credentials stored)' : 'valid'}`);
   } else {
-    const allZero = token.every(b => b === 0);
-    if (!allZero) {
-      // Device generated a token for us (first time or reissued)
-      storeToken(token);
-      log('info', 'WiFi token received from device');
-    } else {
-      clearToken();
-      log('info', 'No WiFi token on device — configure WiFi to generate one');
-    }
+    // An invalid response carries no token: store nothing, clear nothing.
+    log('info', 'Wi-Fi token rejected');
   }
 
   // Resolve pending validate
   if (_pendingValidate) {
-    _pendingValidate.resolve(valid || !token.every(b => b === 0));
+    _pendingValidate.resolve(!!valid);
     _pendingValidate = null;
   }
 

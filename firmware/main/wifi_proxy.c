@@ -1120,7 +1120,12 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport)
         /* Payload: valid(1) token(16) has_creds(1) */
         uint8_t resp[1 + KB_WIFI_TOKEN_LEN + 1];
         resp[0] = valid ? 1 : 0;
-        memcpy(&resp[1], s_token, KB_WIFI_TOKEN_LEN);
+        /* Only a caller that proved it holds the token gets it back. */
+        if (valid) {
+            memcpy(&resp[1], s_token, KB_WIFI_TOKEN_LEN);
+        } else {
+            memset(&resp[1], 0, KB_WIFI_TOKEN_LEN);
+        }
         resp[1 + KB_WIFI_TOKEN_LEN] = has_stored_credentials() ? 1 : 0;
         send_response(KB_PKT_WIFI_TOKEN_RESPONSE, resp, sizeof(resp), transport);
         return;
