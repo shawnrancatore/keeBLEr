@@ -34,6 +34,8 @@ CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
 CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
+# The firmware must see every disconnect; its own handler re-advertises.
+CONFIG_BT_NIMBLE_ENABLE_CONN_REATTEMPT=n
 
 # ---------- Flash size (for WiFi + BLE + USB HID) ----------
 

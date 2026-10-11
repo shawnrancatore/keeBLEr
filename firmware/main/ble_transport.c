@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 /* NimBLE includes */
 #include "nimble/nimble_port.h"
@@ -68,6 +69,9 @@ static void *s_conn_user_ctx = NULL;
 static bool s_link_armed = false;
 
 static kb_parser_t s_ble_parser;
+
+/* Serialises whole frames on the wire. See kb_ble_send. */
+static SemaphoreHandle_t s_tx_mutex = NULL;
 
 /* Forward declarations */
 static int ble_gap_event_cb(struct ble_gap_event *event, void *arg);
@@ -458,6 +462,12 @@ esp_err_t kb_ble_init(void)
     /* Initialize frame parser */
     kb_parser_init(&s_ble_parser);
 
+    s_tx_mutex = xSemaphoreCreateMutex();
+    if (s_tx_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create TX mutex");
+        return ESP_ERR_NO_MEM;
+    }
+
     /* Initialize NimBLE port */
     rc = nimble_port_init();
     if (rc != ESP_OK) {
@@ -520,10 +530,27 @@ esp_err_t kb_ble_send(const uint8_t *data, size_t len)
 
     /* A notification carries at most (ATT MTU - 3) bytes; NimBLE truncates a
      * longer one and still reports success. The receivers on both sides are
-     * byte-stream frame parsers, so a frame may span notifications. */
-    uint16_t mtu = ble_att_mtu(s_conn_handle);
+     * byte-stream frame parsers, so a frame may span notifications.
+     *
+     * Four tasks send here, and the host lock is released between chunks, so
+     * without s_tx_mutex the chunks of two frames could interleave on the wire
+     * and both frames would be lost. The mutex is held only across the chunk
+     * loop. It cannot deadlock: GATT write callbacks (the only path from the
+     * host task into this function) run without the host lock, and nothing
+     * sends from the GAP event handler, so no holder of the host lock ever
+     * waits for the mutex. */
+    xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
+
+    /* The link may have changed while waiting. */
+    uint16_t handle = s_conn_handle;
+    if (handle == BLE_HS_CONN_HANDLE_NONE) {
+        xSemaphoreGive(s_tx_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint16_t mtu = ble_att_mtu(handle);
     size_t chunk = (mtu >= 23) ? (size_t)(mtu - 3) : 20;
 
+    esp_err_t result = ESP_OK;
     size_t sent = 0;
     while (sent < len) {
         size_t n = len - sent;
@@ -534,19 +561,27 @@ esp_err_t kb_ble_send(const uint8_t *data, size_t len)
         struct os_mbuf *om = ble_hs_mbuf_from_flat(data + sent, n);
         if (om == NULL) {
             ESP_LOGE(TAG, "Failed to allocate mbuf for TX");
-            return ESP_ERR_NO_MEM;
+            /* NO_MEM means "nothing sent, retry the frame"; not true once a
+             * chunk has gone out. */
+            result = (sent == 0) ? ESP_ERR_NO_MEM : ESP_FAIL;
+            break;
         }
 
-        int rc = ble_gatts_notify_custom(s_conn_handle, s_tx_chr_val_handle, om);
+        int rc = ble_gatts_notify_custom(handle, s_tx_chr_val_handle, om);
         if (rc != 0) {
             ESP_LOGE(TAG, "BLE notify failed: %d", rc);
-            return ESP_FAIL;
+            result = ESP_FAIL;
+            break;
         }
         sent += n;
     }
 
-    ESP_LOGD(TAG, "BLE TX %d bytes", (int)len);
-    return ESP_OK;
+    xSemaphoreGive(s_tx_mutex);
+
+    if (result == ESP_OK) {
+        ESP_LOGD(TAG, "BLE TX %d bytes", (int)len);
+    }
+    return result;
 }
 
 esp_err_t kb_ble_send_packet(uint8_t type, const uint8_t *payload, uint8_t payload_len)
