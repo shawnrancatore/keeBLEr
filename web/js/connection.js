@@ -280,8 +280,9 @@ export async function connectToDevice(device) {
       cancelAutoConnect();
       state.reconnecting = false;
       state.reconnectAttempts = 0;
-      cleanupConnection();
+      // No device to reconnect to, whatever fires while the link is torn down.
       state.bleDevice = null;
+      cleanupConnection();
       setConnectionStatus('error', 'Not authorised');
       log('error', DENIED_MESSAGE);
     } else {
@@ -428,7 +429,7 @@ export function cancelAutoConnect() {
 
 function onBleTxNotification(event) {
   const value = event.target.value;
-  const data = new Uint8Array(value.buffer);
+  const data = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   if (state.frameParser) {
     state.frameParser.feed(data);
   }
@@ -631,13 +632,18 @@ export function cleanupConnection() {
   _releaseAllKeys(false);
   _releaseAllMouseButtons(false);
 
-  if (state.transport === 'ble') {
+  // Clear the transport BEFORE tearing the link down. A browser may fire
+  // 'gattserverdisconnected' synchronously inside gatt.disconnect(); the
+  // handler must find no live link, or it would start a reconnect for a link
+  // the app itself is closing.
+  const transport = state.transport;
+  state.transport = null;
+  if (transport === 'ble') {
     cleanupBle();
-  } else if (state.transport === 'serial') {
+  } else if (transport === 'serial') {
     cleanupSerial();
   }
 
-  state.transport = null;
   state.frameParser = null;
   state.deviceVersion = null;
   state.deviceBoard = null;
@@ -657,8 +663,8 @@ export function disconnect() {
   state.reconnecting = false;
   state.reconnectAttempts = 0;
 
-  cleanupConnection();
   state.bleDevice = null;
+  cleanupConnection();
 
   setConnectionStatus('disconnected', 'Disconnected');
   log('info', 'Disconnected (auto-connect paused — click Connect BLE to resume)');

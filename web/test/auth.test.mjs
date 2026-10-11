@@ -229,3 +229,48 @@ test('UNSAVED_MESSAGE is exported, non-empty, and holds no pass', async () => {
   assert.ok(mod.UNSAVED_MESSAGE.length > 0);
   assert.doesNotMatch(mod.UNSAVED_MESSAGE, /[0-9a-f]{32}/i);
 });
+
+// --- Two tabs: a pass saved by another tab while this one connects ---
+
+test('a refusal does not erase a different pass saved meanwhile', async () => {
+  const s = fakeStorage({ [passKey('dev-1')]: PASS_HEX });
+  const l = link(result(AUTH_DENIED));
+  const otherHex = Array.from(OTHER).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const send = (p) => l.send(p);
+  const sendAndSave = async (payload) => {
+    s.setItem(passKey('dev-1'), otherHex); // another tab saved a new pass
+    return send(payload);
+  };
+  const run = () => runAuth({ send: sendAndSave, waitReply: l.waitReply, storage: s, deviceId: 'dev-1' });
+  await assert.rejects(
+    run(),
+    (e) => e instanceof Error && e.name !== 'AuthDeniedError',
+  );
+  assert.deepEqual(s.dump(), { [passKey('dev-1')]: otherHex });
+});
+
+test('a refusal of an empty AUTH keeps a pass saved meanwhile', async () => {
+  const s = fakeStorage();
+  const l = link(result(AUTH_DENIED));
+  const send = (p) => l.send(p);
+  const sendAndSave = async (payload) => {
+    s.setItem(passKey('dev-1'), PASS_HEX);
+    return send(payload);
+  };
+  const run = () => runAuth({ send: sendAndSave, waitReply: l.waitReply, storage: s, deviceId: 'dev-1' });
+  await assert.rejects(
+    run(),
+    (e) => e instanceof Error && e.name !== 'AuthDeniedError',
+  );
+  assert.deepEqual(s.dump(), { [passKey('dev-1')]: PASS_HEX });
+});
+
+test('a refusal of the stored pass clears it and says so', async () => {
+  const s = fakeStorage({ [passKey('dev-1')]: PASS_HEX });
+  const l = link(result(AUTH_DENIED));
+  await assert.rejects(
+    runAuth({ send: (p) => l.send(p), waitReply: l.waitReply, storage: s, deviceId: 'dev-1' }),
+    AuthDeniedError,
+  );
+  assert.deepEqual(s.dump(), {});
+});

@@ -42,6 +42,14 @@ export function loadPass(storage, deviceId) {
   return bytes;
 }
 
+function samePass(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 /** Returns true when the pass was stored, false when storage refused it. */
 export function savePass(storage, deviceId, pass) {
   const hex = Array.from(pass).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -89,8 +97,9 @@ export function parseAuthResult(payload) {
  */
 export async function runAuth({ send, waitReply, storage, deviceId, timeoutMs = 3000 }) {
   const stored = loadPass(storage, deviceId);
+  const sent = stored || new Uint8Array(0);
   const replyPromise = waitReply(timeoutMs); // listen first, then speak
-  await send(stored || new Uint8Array(0));
+  await send(sent);
   const reply = await replyPromise;
 
   if (!reply) throw new Error('No answer to the connect request');
@@ -106,6 +115,12 @@ export async function runAuth({ send, waitReply, storage, deviceId, timeoutMs = 
   }
   if (result.status === AUTH_OK) return 'ok';
 
+  // Another tab of the app may have been granted a new pass while this one was
+  // connecting. A refusal of an older pass (or of an empty AUTH) must not erase it.
+  const now = loadPass(storage, deviceId);
+  if (now && !samePass(now, sent)) {
+    throw new Error('The saved pass changed while connecting; try again');
+  }
   clearPass(storage, deviceId);
   throw new AuthDeniedError();
 }
