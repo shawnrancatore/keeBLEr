@@ -22,8 +22,14 @@ export const TYPE_STATUS_REQUEST   = 0x10;
 export const TYPE_STATUS_RESPONSE  = 0x11;
 export const TYPE_HEARTBEAT        = 0x20;
 export const TYPE_HEARTBEAT_ACK    = 0x21;
+export const TYPE_AUTH             = 0x30; // host->dev: empty, or the 16-byte pass
+export const TYPE_AUTH_RESULT      = 0x31; // dev->host: status(1) [+ pass(16) when granted]
 export const TYPE_ACK              = 0xFE;
 export const TYPE_ECHO             = 0xFF;
+
+// ACK status codes the connection logic cares about
+export const ACK_UNKNOWN_TYPE       = 0x01; // firmware 1.3 and older answer AUTH with this
+export const ACK_NOT_AUTHENTICATED  = 0x20;
 
 // WiFi management
 export const TYPE_WIFI_SCAN_REQ        = 0x40;
@@ -56,6 +62,8 @@ export const TYPE_NAMES = {
   [TYPE_STATUS_RESPONSE]: 'STATUS_RESPONSE',
   [TYPE_HEARTBEAT]:       'HEARTBEAT',
   [TYPE_HEARTBEAT_ACK]:   'HEARTBEAT_ACK',
+  [TYPE_AUTH]:            'AUTH',
+  [TYPE_AUTH_RESULT]:     'AUTH_RESULT',
   [TYPE_ACK]:             'ACK',
   [TYPE_ECHO]:            'ECHO',
   [TYPE_WIFI_SCAN_REQ]:        'WIFI_SCAN_REQ',
