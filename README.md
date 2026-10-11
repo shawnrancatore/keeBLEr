@@ -3,7 +3,7 @@
 **keeBLEr** = keyboard **BLE** enabler
 
 <!-- bricoleur:intro -->
-> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand.
+> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand. Related: **[capurnion](https://github.com/bricoleur-ai/capurnion)**, another tool that works from the browser you already have open.
 <!-- /bricoleur:intro -->
 
 A wireless keyboard bridge. Plug a tiny ESP32-S3 board into any computer's USB port, open a browser on your other computer, and type — wirelessly, over Bluetooth Low Energy. No drivers, no pairing menus, no apps to install.
