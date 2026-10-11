@@ -47,7 +47,7 @@ The ESP32-S3's USB port plugs into the computer you want to control. It shows up
 
 ### 3. Open the web app
 
-Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing.
+Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing. Do this within 60 seconds of plugging the board in: the first browser to connect in that time claims the board (see [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140)).
 
 On subsequent visits, it auto-connects to your paired device.
 
@@ -141,16 +141,34 @@ The device advertises as **"keebler \<version\>"** and exposes a custom GATT ser
 
 LENGTH = payload bytes only. CRC-8 polynomial 0x07 over TYPE + PAYLOAD.
 
+A frame longer than the connection allows in one notification (the ATT MTU minus 3 bytes) is sent as several notifications. Treat notifications from the device as a byte stream and find each frame by its magic byte and LENGTH, not by notification boundaries.
+
 | Type | Name | Payload |
 |------|------|---------|
 | `0x01` | KEYBOARD_REPORT | modifiers(1) + reserved(1) + keycodes(6) |
 | `0x02` | MOUSE_REPORT | buttons(1) + dx(1) + dy(1) + wheel(1) + pan(1) |
 | `0x10` | STATUS_REQUEST | *(empty)* |
-| `0x11` | STATUS_RESPONSE | version(1) + board(1) + transport(1) + error(1) |
+| `0x11` | STATUS_RESPONSE | version(1) + board(1) + transport(1) + error(1) + flags(1) |
 | `0x20` | HEARTBEAT | sequence(1) |
 | `0x21` | HEARTBEAT_ACK | sequence(1) |
+| `0x30` | AUTH | *(empty)*, or the 16-byte session pass |
+| `0x31` | AUTH_RESULT | status(1), plus the 16-byte pass when the status is GRANTED |
 | `0xFE` | ACK | status(1) |
 | `0xFF` | ECHO | variable — loopback test |
+
+### Connect window and session pass (protocol 2, firmware 1.4.0)
+
+For 60 seconds after power-up, the board gives the first browser that connects a session pass: 16 random bytes, kept in RAM only. From then until power-off, it serves only a connection that presents that pass.
+
+- The browser sends AUTH as its first packet: empty the first time, the stored pass afterwards.
+- AUTH_RESULT status: `0x00` OK (the pass matched), `0x01` GRANTED (a new pass follows), `0x02` DENIED (the board disconnects about 200 ms later).
+- Before AUTH succeeds, the board accepts only STATUS_REQUEST, AUTH and HEARTBEAT. Anything else gets ACK `0x20` NOT_AUTHENTICATED.
+- A connection that has not authenticated within 5 seconds is dropped.
+- STATUS_RESPONSE flags: bit 0 the window is open and no browser has claimed the board yet, bit 1 a pass has been issued, bit 2 this connection is authenticated.
+- The wired serial path is not gated.
+- A power cycle, including the restart after a BOOT mode switch, clears the pass and opens a new window.
+
+**What this does not do.** The link is still unencrypted: someone with a Bluetooth sniffer nearby can read keystrokes, and can capture the pass during a connection. Someone who can power-cycle the board can claim it. The window stops a stranger's phone or laptop from connecting and typing, and from holding the board's one connection.
 
 ## Project structure
 
@@ -185,6 +203,7 @@ The generic target works on most ESP32-S3 boards out of the box.
 ## What it doesn't do
 
 - It does not pair with the target over Bluetooth. The target only ever sees a USB keyboard (and, in composite mode, a mouse), so it needs a free USB port.
+- Only the first browser to connect within 60 seconds of power-up can type, and only until the board is powered off. The Bluetooth link is not encrypted, so someone nearby with a sniffer can read your keystrokes.
 - It needs a Chromium browser (Chrome, Edge or Brave) on the controlling computer.
 - Boot keyboard mode has no mouse. That is the price of working everywhere.
 
@@ -195,6 +214,7 @@ The generic target works on most ESP32-S3 boards out of the box.
 | `ACK error 0x03` | USB HID not mounted — wait ~10s for enumeration, check cable |
 | BLE won't connect | Ensure HTTPS, use Chrome/Edge |
 | XIAO shows as `303a:1001` after flash | Unplug and replug |
+| "Not authorised", or the LED double-blinks | Another browser claimed the board, or nobody connected in the first 60 seconds. Unplug the board, plug it back in, and connect within 60 seconds |
 | Keys stuck after disconnect | Fixed in firmware — auto key-release on BLE disconnect |
 
 ## License
