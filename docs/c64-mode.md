@@ -68,6 +68,7 @@ If the C64 Ultimate's firmware is modified to send CORS headers, or if you use a
 
 - A 16-byte random token is generated on first WiFi configuration
 - The token is stored in the browser (localStorage) and on the device (NVS)
+- The browser keeps a separate WiFi token for each board, so setting up or connecting to a second board does not affect the first
 - All WiFi and HTTP proxy commands require the token
 - **Forget** clears the token and stored WiFi credentials from both sides
 - The board's WiFi settings belong to the browser that set them up. The board changes or forgets them only for a request that carries that browser's token. A browser without the token (another browser, or cleared site data) cannot change them.

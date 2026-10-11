@@ -14,33 +14,31 @@ import {
   TYPE_HTTP_RESPONSE_DONE, TYPE_HTTP_REQUEST_URL_CONT, TYPE_HTTP_ERROR,
   TYPE_NAMES,
 } from './protocol.js';
+import { loadToken, saveToken, dropToken, hasAnyToken } from './wifi-token.js';
 
 // ---------------------------------------------------------------------------
 // Token management
 // ---------------------------------------------------------------------------
 
-const TOKEN_KEY = 'keebler_wifi_token';
+// The board a Wi-Fi token belongs to: the Bluetooth device now connected.
+// The wired serial link has no identity, so it uses the single old slot.
+function currentBoardId() {
+  return state.transport === 'ble' && state.bleDevice ? state.bleDevice.id : null;
+}
 
-/** Returns stored token as Uint8Array(16), or null if not present. */
+/** Returns this board's stored token as Uint8Array(16), or null if there is none. */
 export function getStoredToken() {
-  const hex = localStorage.getItem(TOKEN_KEY);
-  if (!hex || hex.length !== 32) return null;
-  const bytes = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) {
-    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  }
-  return bytes;
+  return loadToken(localStorage, currentBoardId());
 }
 
-/** Save a Uint8Array(16) token as hex string in localStorage. */
+/** Save a Uint8Array(16) token as this board's token. Returns false if it could not be saved. */
 export function storeToken(token) {
-  const hex = Array.from(token).map(b => b.toString(16).padStart(2, '0')).join('');
-  localStorage.setItem(TOKEN_KEY, hex);
+  return saveToken(localStorage, currentBoardId(), token);
 }
 
-/** Remove stored token from localStorage. */
+/** Stop presenting a token to this board. Other boards' tokens are untouched. */
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
+  dropToken(localStorage, currentBoardId());
 }
 
 /** Returns current token or 16 zero bytes for first-time config. */
@@ -465,7 +463,7 @@ function _handleTokenResponse(payload) {
     // The board refused our token. Since firmware 1.4.0 a refusal carries no
     // token. Drop ours, so a board that has none can issue a new one.
     clearToken();
-    log('info', 'WiFi token not accepted by this board; cleared it');
+    log('info', 'This board did not accept the saved WiFi token');
   } else {
     // We sent no token and the board refused: it already has one that this
     // browser does not hold.
@@ -584,7 +582,8 @@ function _updateWifiUI() {
       icon.title = isAP ? `AP: ${state.wifiSSID}` : `WiFi: ${state.wifiSSID} (${state.wifiIP})`;
     }
   } else {
-    const hasToken = !!getStoredToken();
+    // Connected: this board's token. Not connected: any board's.
+    const hasToken = state.transport ? !!getStoredToken() : hasAnyToken(localStorage);
     wifiEl.statusText.textContent = hasToken ? 'Configured (not connected)' : 'Not configured';
     wifiEl.statusText.style.color = 'var(--text-secondary)';
     if (wifiEl.btnDisconnect) wifiEl.btnDisconnect.classList.add('hidden');
