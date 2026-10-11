@@ -146,6 +146,15 @@ static void send_ack(uint8_t status, uint8_t transport)
     send_response(KB_PKT_ACK, &status, KB_ACK_LEN, transport);
 }
 
+/* Reply gate for the Wi-Fi proxy: true while the current BLE link is authenticated. */
+static bool ble_reply_allowed(void)
+{
+    taskENTER_CRITICAL(&s_auth_mux);
+    uint8_t flags = kb_auth_flags(&s_auth, now_ms());
+    taskEXIT_CRITICAL(&s_auth_mux);
+    return (flags & KB_STATUS_FLAG_AUTHENTICATED) != 0;
+}
+
 static void send_status_response(uint8_t transport)
 {
     uint64_t t = now_ms();
@@ -458,6 +467,7 @@ void app_main(void)
     }
 
     /* Initialize WiFi proxy (stays off until connect request) */
+    kb_wifi_set_ble_reply_check(ble_reply_allowed);
     ret = kb_wifi_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WiFi proxy init failed: %s", esp_err_to_name(ret));
