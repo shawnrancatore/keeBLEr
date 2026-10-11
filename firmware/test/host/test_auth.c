@@ -205,6 +205,200 @@ static void test_init_clears_everything(void)
     CHECK(memcmp(a.pass, zero, KB_AUTH_PASS_LEN) == 0);
 }
 
+/* ---- fix round 1 ---- */
+
+static void test_every_bit_of_the_pass_matters(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    for (int i = 0; i < KB_AUTH_PASS_LEN; i++) {
+        for (int bit = 0; bit < 8; bit++) {
+            uint8_t guess[KB_AUTH_PASS_LEN];
+            memcpy(guess, FRESH_A, KB_AUTH_PASS_LEN);
+            guess[i] ^= (uint8_t)(1u << bit);
+            kb_auth_on_connect(&a, 200);
+            CHECK_EQ(kb_auth_handle(&a, 200, guess, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+            kb_auth_on_disconnect(&a);
+        }
+    }
+    CHECK(memcmp(a.pass, FRESH_A, KB_AUTH_PASS_LEN) == 0);
+}
+
+static void test_a_pending_drop_does_not_carry_to_the_next_link(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    const uint64_t t = 2000;
+    kb_auth_on_connect(&a, t);
+    CHECK_EQ(kb_auth_handle(&a, t, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    kb_auth_on_disconnect(&a);
+
+    kb_auth_on_connect(&a, t + 50);
+    CHECK(!kb_auth_should_drop(&a, t + 50 + KB_AUTH_DENY_GRACE_MS));
+    CHECK_EQ(kb_auth_handle(&a, t + 50 + KB_AUTH_DENY_GRACE_MS, FRESH_A, KB_AUTH_PASS_LEN, FRESH_B),
+             KB_AUTH_RESULT_OK);
+    CHECK(!kb_auth_should_drop(&a, t + 50 + 60 * 60 * 1000ULL));
+}
+
+static void test_on_connect_alone_resets_the_link_state(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    CHECK(kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+
+    /* A new link without a disconnect in between. */
+    kb_auth_on_connect(&a, 10000);
+    CHECK(!kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+
+    kb_auth_on_connect(&a, 20000);
+    CHECK_EQ(kb_auth_handle(&a, 20000, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    kb_auth_on_connect(&a, 20100);
+    CHECK(!kb_auth_should_drop(&a, 20100 + KB_AUTH_DEADLINE_MS - 1));
+}
+
+static void test_the_right_pass_after_a_wrong_one_clears_the_drop(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    kb_auth_on_connect(&a, 200);
+    CHECK_EQ(kb_auth_handle(&a, 200, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK_EQ(kb_auth_handle(&a, 210, FRESH_A, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_OK);
+    CHECK(kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+    CHECK(!kb_auth_should_drop(&a, 210 + KB_AUTH_DENY_GRACE_MS));
+    CHECK(!kb_auth_should_drop(&a, 210 + 60 * 60 * 1000ULL));
+}
+
+static void test_a_null_payload_of_pass_length_is_denied(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    CHECK_EQ(kb_auth_handle(&a, 100, NULL, KB_AUTH_PASS_LEN, FRESH_A), KB_AUTH_RESULT_DENIED);
+    CHECK(!a.has_pass);
+    kb_auth_on_disconnect(&a);
+
+    kb_auth_on_connect(&a, 200);
+    CHECK_EQ(kb_auth_handle(&a, 200, NULL, 0, FRESH_A), KB_AUTH_RESULT_GRANTED);
+    kb_auth_on_disconnect(&a);
+
+    kb_auth_on_connect(&a, 300);
+    CHECK_EQ(kb_auth_handle(&a, 300, NULL, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK(memcmp(a.pass, FRESH_A, KB_AUTH_PASS_LEN) == 0);
+}
+
+static void test_bad_auth_on_an_authenticated_link_is_denied(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    CHECK_EQ(kb_auth_handle(&a, 110, NULL, 0, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK(!kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+    kb_auth_on_disconnect(&a);
+
+    const uint8_t lens[] = {1, 15, 17};
+    for (size_t i = 0; i < sizeof(lens); i++) {
+        uint8_t buf[17];
+        memset(buf, 0xA0, sizeof(buf));
+        kb_auth_on_connect(&a, 1000);
+        CHECK_EQ(kb_auth_handle(&a, 1000, FRESH_A, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_OK);
+        CHECK(kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+        CHECK_EQ(kb_auth_handle(&a, 1000, buf, lens[i], FRESH_B), KB_AUTH_RESULT_DENIED);
+        CHECK(!kb_auth_packet_allowed(&a, KB_PKT_KEYBOARD_REPORT));
+        kb_auth_on_disconnect(&a);
+    }
+}
+
+static void test_a_clock_that_went_backwards_is_closed(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, UINT64_MAX - 1000);
+    CHECK(!kb_auth_window_open(&a, 5));
+    CHECK(kb_auth_window_open(&a, UINT64_MAX - 500));
+}
+
+static void test_should_drop_before_link_time_is_false(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 5000);
+    CHECK(!kb_auth_should_drop(&a, 4999));
+}
+
+static void test_repeated_denied_keeps_the_first_drop_time(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    const uint64_t t = 1000;
+    kb_auth_on_connect(&a, t);
+    CHECK_EQ(kb_auth_handle(&a, t, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK_EQ(kb_auth_handle(&a, t + 100, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK(!kb_auth_should_drop(&a, t + KB_AUTH_DENY_GRACE_MS - 1));
+    CHECK(kb_auth_should_drop(&a, t + KB_AUTH_DENY_GRACE_MS));
+}
+
+static void test_the_grace_is_honoured_near_the_deadline(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    const uint64_t t = 1000;
+    kb_auth_on_connect(&a, t);
+    CHECK_EQ(kb_auth_handle(&a, t + 4900, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK(!kb_auth_should_drop(&a, t + KB_AUTH_DEADLINE_MS));
+    CHECK(!kb_auth_should_drop(&a, t + 5099));
+    CHECK(kb_auth_should_drop(&a, t + 5100));
+}
+
+static void test_a_wrong_pass_on_an_old_authenticated_link_gets_its_grace(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    kb_auth_handle(&a, 100, NULL, 0, FRESH_A);
+    kb_auth_on_disconnect(&a);
+
+    const uint64_t t = 1000;
+    kb_auth_on_connect(&a, t);
+    CHECK_EQ(kb_auth_handle(&a, t, FRESH_A, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_OK);
+    CHECK_EQ(kb_auth_handle(&a, t + 60000, FRESH_B, KB_AUTH_PASS_LEN, FRESH_B), KB_AUTH_RESULT_DENIED);
+    CHECK(!kb_auth_should_drop(&a, t + 60000 + KB_AUTH_DENY_GRACE_MS - 1));
+    CHECK(kb_auth_should_drop(&a, t + 60000 + KB_AUTH_DENY_GRACE_MS));
+}
+
+static void test_auth_with_no_link_is_refused(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    CHECK_EQ(kb_auth_handle(&a, 100, NULL, 0, FRESH_A), KB_AUTH_RESULT_DENIED);
+    CHECK(!a.has_pass);
+    CHECK(!kb_auth_should_drop(&a, 100 + KB_AUTH_DENY_GRACE_MS));
+
+    kb_auth_on_connect(&a, 200);
+    CHECK_EQ(kb_auth_handle(&a, 200, NULL, 0, FRESH_A), KB_AUTH_RESULT_GRANTED);
+}
+
 int main(void)
 {
     test_first_empty_auth_in_the_window_is_granted();
@@ -221,5 +415,17 @@ int main(void)
     test_the_gate_allows_exactly_three_types_before_auth();
     test_flags();
     test_init_clears_everything();
+    test_every_bit_of_the_pass_matters();
+    test_a_pending_drop_does_not_carry_to_the_next_link();
+    test_on_connect_alone_resets_the_link_state();
+    test_the_right_pass_after_a_wrong_one_clears_the_drop();
+    test_a_null_payload_of_pass_length_is_denied();
+    test_bad_auth_on_an_authenticated_link_is_denied();
+    test_a_clock_that_went_backwards_is_closed();
+    test_should_drop_before_link_time_is_false();
+    test_repeated_denied_keeps_the_first_drop_time();
+    test_the_grace_is_honoured_near_the_deadline();
+    test_a_wrong_pass_on_an_old_authenticated_link_gets_its_grace();
+    test_auth_with_no_link_is_refused();
     TEST_MAIN_END();
 }

@@ -15,8 +15,10 @@ static bool ct_equal(const uint8_t *x, const uint8_t *y, size_t n)
 static uint8_t deny(kb_auth_t *a, uint64_t now_ms)
 {
     a->authenticated = false;
-    a->drop_pending = true;
-    a->drop_at_ms = now_ms + KB_AUTH_DENY_GRACE_MS;
+    if (!a->drop_pending) {
+        a->drop_pending = true;
+        a->drop_at_ms = now_ms + KB_AUTH_DENY_GRACE_MS;
+    }
     return KB_AUTH_RESULT_DENIED;
 }
 
@@ -53,6 +55,10 @@ uint8_t kb_auth_handle(kb_auth_t *a, uint64_t now_ms,
                        const uint8_t *payload, uint8_t len,
                        const uint8_t fresh_pass[KB_AUTH_PASS_LEN])
 {
+    if (!a->connected) {
+        return KB_AUTH_RESULT_DENIED;
+    }
+
     bool well_formed = (len == 0) || (len == KB_AUTH_PASS_LEN && payload != NULL);
     if (!well_formed) {
         return deny(a, now_ms);
@@ -85,10 +91,15 @@ bool kb_auth_should_drop(const kb_auth_t *a, uint64_t now_ms)
     if (!a->connected) {
         return false;
     }
-    if (a->drop_pending && now_ms >= a->drop_at_ms) {
-        return true;
+    if (a->drop_pending) {
+        /* A refused link gets its grace, even near the deadline, so the
+         * DENIED reply can leave before the link drops. */
+        return now_ms >= a->drop_at_ms;
     }
-    return !a->authenticated && (now_ms - a->link_ms) >= KB_AUTH_DEADLINE_MS;
+    if (a->authenticated || now_ms < a->link_ms) {
+        return false;
+    }
+    return (now_ms - a->link_ms) >= KB_AUTH_DEADLINE_MS;
 }
 
 bool kb_auth_packet_allowed(const kb_auth_t *a, uint8_t type)

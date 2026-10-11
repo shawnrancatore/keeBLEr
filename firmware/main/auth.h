@@ -6,8 +6,8 @@
  * time in milliseconds and fresh random bytes, so the logic runs in host tests.
  *
  * Rules:
- *   - For 60 s after boot, while no pass exists, the first AUTH is GRANTED and
- *     a pass is issued. What that AUTH carried is ignored.
+ *   - For 60 s after boot, while no pass exists, the first AUTH on a connection
+ *     is GRANTED and a pass is issued. What that AUTH carried is ignored.
  *   - Once a pass exists, only an AUTH carrying it is OK. Anything else is
  *     DENIED, and the connection is dropped about 200 ms later.
  *   - A connection that has not authenticated within 5 s is dropped.
