@@ -66,4 +66,6 @@ export function checkBrowserApis() {
   if (allGood) {
     log('success', 'All browser APIs available');
   }
+
+  log('info', 'A keeBLEr accepts a new browser only in the first 60 seconds after it is plugged in.');
 }

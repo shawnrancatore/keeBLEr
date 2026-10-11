@@ -30,6 +30,7 @@ export const state = {
   deviceBoard: null,
   deviceTransport: null,
   deviceError: null,
+  deviceFlags: null,
 
   // Heartbeat
   heartbeatInterval: null,
