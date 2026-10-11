@@ -66,6 +66,22 @@ void kb_ble_set_rx_callback(kb_ble_rx_cb_t cb, void *user_ctx);
  */
 bool kb_ble_is_connected(void);
 
+/**
+ * Callback for link changes. Called with true when a central has connected,
+ * and with false when it has gone. Runs in the NimBLE host task: do not block.
+ */
+typedef void (*kb_ble_conn_cb_t)(bool connected, void *user_ctx);
+
+/** Set the link-change callback. Call before kb_ble_init. */
+void kb_ble_set_conn_callback(kb_ble_conn_cb_t cb, void *user_ctx);
+
+/**
+ * Drop the current connection. Safe to call from any task.
+ * @return ESP_OK if a disconnect was started (or is already under way),
+ *         ESP_ERR_INVALID_STATE if nothing is connected.
+ */
+esp_err_t kb_ble_disconnect(void);
+
 #ifdef __cplusplus
 }
 #endif

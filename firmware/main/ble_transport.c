@@ -60,6 +60,9 @@ static uint8_t s_own_addr_type;
 static kb_ble_rx_cb_t s_rx_callback = NULL;
 static void *s_rx_user_ctx = NULL;
 
+static kb_ble_conn_cb_t s_conn_cb = NULL;
+static void *s_conn_user_ctx = NULL;
+
 static kb_parser_t s_ble_parser;
 
 /* Forward declarations */
@@ -262,6 +265,9 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
             ESP_LOGI(TAG, "BLE connected, conn_handle=%d", s_conn_handle);
+            if (s_conn_cb) {
+                s_conn_cb(true, s_conn_user_ctx);
+            }
 
             /* Request low-latency connection parameters for HID responsiveness:
              * interval 7.5–15ms, latency 0, timeout 2s */
@@ -287,6 +293,9 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         s_notify_enabled = false;
         /* Reset parser state on disconnect */
         kb_parser_init(&s_ble_parser);
+        if (s_conn_cb) {
+            s_conn_cb(false, s_conn_user_ctx);
+        }
         /* Resume advertising */
         ble_advertise();
         return 0;
@@ -513,4 +522,24 @@ void kb_ble_set_rx_callback(kb_ble_rx_cb_t cb, void *user_ctx)
 bool kb_ble_is_connected(void)
 {
     return s_conn_handle != BLE_HS_CONN_HANDLE_NONE;
+}
+
+void kb_ble_set_conn_callback(kb_ble_conn_cb_t cb, void *user_ctx)
+{
+    s_conn_cb = cb;
+    s_conn_user_ctx = user_ctx;
+}
+
+esp_err_t kb_ble_disconnect(void)
+{
+    uint16_t handle = s_conn_handle;
+    if (handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    int rc = ble_gap_terminate(handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (rc != 0 && rc != BLE_HS_EALREADY) {
+        ESP_LOGW(TAG, "ble_gap_terminate failed: %d", rc);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
