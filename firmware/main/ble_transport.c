@@ -62,6 +62,10 @@ static void *s_rx_user_ctx = NULL;
 
 static kb_ble_conn_cb_t s_conn_cb = NULL;
 static void *s_conn_user_ctx = NULL;
+/* True from the moment the connect callback has fired for the current link
+ * until the DISCONNECT event. Host task only. Keeps the callback to once per
+ * link whichever of CONNECT or LINK_ESTAB arrives first. */
+static bool s_link_armed = false;
 
 static kb_parser_t s_ble_parser;
 
@@ -256,17 +260,40 @@ static void ble_advertise(void)
 /*  GAP Event Handler                                                        */
 /* ========================================================================= */
 
+/* Record the new link and tell the application, once per link. */
+static void arm_link(uint16_t conn_handle)
+{
+    s_conn_handle = conn_handle;
+    s_link_armed = true;
+    ESP_LOGI(TAG, "BLE connected, conn_handle=%d", s_conn_handle);
+    if (s_conn_cb) {
+        s_conn_cb(true, s_conn_user_ctx);
+    }
+}
+
 static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
 
     switch (event->type) {
-    case BLE_GAP_EVENT_LINK_ESTAB:
+    case BLE_GAP_EVENT_CONNECT:
+        /* The link exists, and carries ATT traffic, from this event. LINK_ESTAB
+         * follows only if the remote-features read succeeds, so the link is
+         * armed here, not there. */
         if (event->connect.status == 0) {
-            s_conn_handle = event->connect.conn_handle;
-            ESP_LOGI(TAG, "BLE connected, conn_handle=%d", s_conn_handle);
-            if (s_conn_cb) {
-                s_conn_cb(true, s_conn_user_ctx);
+            arm_link(event->connect.conn_handle);
+        } else {
+            ESP_LOGW(TAG, "BLE connection failed, status=%d", event->connect.status);
+            s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            ble_advertise();
+        }
+        return 0;
+
+    case BLE_GAP_EVENT_LINK_ESTAB:
+        if (event->link_estab.status == 0) {
+            /* Normally armed by CONNECT already; do it here if that was missed. */
+            if (!s_link_armed) {
+                arm_link(event->link_estab.conn_handle);
             }
 
             /* Request low-latency connection parameters for HID responsiveness:
@@ -279,11 +306,12 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
                 .min_ce_len = 0,
                 .max_ce_len = 0,
             };
-            ble_gap_update_params(s_conn_handle, &conn_params);
+            ble_gap_update_params(event->link_estab.conn_handle, &conn_params);
         } else {
-            ESP_LOGW(TAG, "BLE connection failed, status=%d", event->connect.status);
-            s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-            ble_advertise();
+            /* A DISCONNECT event follows if the link ends; do not advertise
+             * while it is still up. */
+            ESP_LOGW(TAG, "BLE link establishment failed, status=%d",
+                     event->link_estab.status);
         }
         return 0;
 
@@ -293,8 +321,11 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         s_notify_enabled = false;
         /* Reset parser state on disconnect */
         kb_parser_init(&s_ble_parser);
-        if (s_conn_cb) {
-            s_conn_cb(false, s_conn_user_ctx);
+        if (s_link_armed) {
+            s_link_armed = false;
+            if (s_conn_cb) {
+                s_conn_cb(false, s_conn_user_ctx);
+            }
         }
         /* Resume advertising */
         ble_advertise();
@@ -487,16 +518,31 @@ esp_err_t kb_ble_send(const uint8_t *data, size_t len)
         return ESP_ERR_INVALID_STATE;
     }
 
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
-    if (om == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate mbuf for TX");
-        return ESP_ERR_NO_MEM;
-    }
+    /* A notification carries at most (ATT MTU - 3) bytes; NimBLE truncates a
+     * longer one and still reports success. The receivers on both sides are
+     * byte-stream frame parsers, so a frame may span notifications. */
+    uint16_t mtu = ble_att_mtu(s_conn_handle);
+    size_t chunk = (mtu >= 23) ? (size_t)(mtu - 3) : 20;
 
-    int rc = ble_gatts_notify_custom(s_conn_handle, s_tx_chr_val_handle, om);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "BLE notify failed: %d", rc);
-        return ESP_FAIL;
+    size_t sent = 0;
+    while (sent < len) {
+        size_t n = len - sent;
+        if (n > chunk) {
+            n = chunk;
+        }
+
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(data + sent, n);
+        if (om == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate mbuf for TX");
+            return ESP_ERR_NO_MEM;
+        }
+
+        int rc = ble_gatts_notify_custom(s_conn_handle, s_tx_chr_val_handle, om);
+        if (rc != 0) {
+            ESP_LOGE(TAG, "BLE notify failed: %d", rc);
+            return ESP_FAIL;
+        }
+        sent += n;
     }
 
     ESP_LOGD(TAG, "BLE TX %d bytes", (int)len);
