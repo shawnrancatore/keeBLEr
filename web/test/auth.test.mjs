@@ -158,7 +158,7 @@ test('shouldRetry: never after a refusal, yes after other failures', () => {
   assert.equal(shouldRetry(null), true);
 });
 
-// --- Fix round 1: a storage failure never locks the owner out ---
+// --- A storage failure never locks the owner out ---
 
 /** Storage where one named operation throws, the others work. */
 function brokenStorage(op) {

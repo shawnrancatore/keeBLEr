@@ -205,7 +205,7 @@ static void test_init_clears_everything(void)
     CHECK(memcmp(a.pass, zero, KB_AUTH_PASS_LEN) == 0);
 }
 
-/* ---- fix round 1 ---- */
+/* ---- edge cases: pass bits, stale drops, clock, bad lengths ---- */
 
 static void test_every_bit_of_the_pass_matters(void)
 {
@@ -399,6 +399,37 @@ static void test_auth_with_no_link_is_refused(void)
     CHECK_EQ(kb_auth_handle(&a, 200, NULL, 0, FRESH_A), KB_AUTH_RESULT_GRANTED);
 }
 
+static void test_spec_values_are_pinned(void)
+{
+    CHECK_EQ(KB_AUTH_WINDOW_MS, 60000);
+    CHECK_EQ(KB_AUTH_DEADLINE_MS, 5000);
+    CHECK_EQ(KB_AUTH_DENY_GRACE_MS, 200);
+    CHECK_EQ(KB_AUTH_PASS_LEN, 16);
+    CHECK_EQ(KB_PKT_AUTH, 0x30);
+    CHECK_EQ(KB_PKT_AUTH_RESULT, 0x31);
+    CHECK_EQ(KB_ACK_ERR_NOT_AUTHENTICATED, 0x20);
+    CHECK_EQ(KB_AUTH_RESULT_OK, 0);
+    CHECK_EQ(KB_AUTH_RESULT_GRANTED, 1);
+    CHECK_EQ(KB_AUTH_RESULT_DENIED, 2);
+    CHECK_EQ(KB_STATUS_FLAG_WINDOW_OPEN, 1);
+    CHECK_EQ(KB_STATUS_FLAG_PASS_ISSUED, 2);
+    CHECK_EQ(KB_STATUS_FLAG_AUTHENTICATED, 4);
+    CHECK_EQ(KB_PROTOCOL_VERSION, 2);
+    CHECK_EQ(KB_STATUS_RESPONSE_LEN, 5);
+}
+
+static void test_a_grant_clears_a_pending_drop(void)
+{
+    kb_auth_t a;
+    kb_auth_init(&a, 0);
+    kb_auth_on_connect(&a, 100);
+    static const uint8_t three[3] = { 1, 2, 3 };
+    CHECK_EQ(kb_auth_handle(&a, 100, three, 3, FRESH_A), KB_AUTH_RESULT_DENIED);
+    CHECK_EQ(kb_auth_handle(&a, 150, NULL, 0, FRESH_A), KB_AUTH_RESULT_GRANTED);
+    CHECK(!kb_auth_should_drop(&a, 150 + KB_AUTH_DENY_GRACE_MS));
+    CHECK(!kb_auth_should_drop(&a, 150 + 60 * 60 * 1000ULL));
+}
+
 int main(void)
 {
     test_first_empty_auth_in_the_window_is_granted();
@@ -427,5 +458,7 @@ int main(void)
     test_the_grace_is_honoured_near_the_deadline();
     test_a_wrong_pass_on_an_old_authenticated_link_gets_its_grace();
     test_auth_with_no_link_is_refused();
+    test_spec_values_are_pinned();
+    test_a_grant_clears_a_pending_drop();
     TEST_MAIN_END();
 }

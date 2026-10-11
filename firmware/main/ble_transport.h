@@ -78,7 +78,9 @@ void kb_ble_set_conn_callback(kb_ble_conn_cb_t cb, void *user_ctx);
 /**
  * Drop the current connection. Safe to call from any task.
  * @return ESP_OK if a disconnect was started (or is already under way),
- *         ESP_ERR_INVALID_STATE if nothing is connected.
+ *         ESP_ERR_INVALID_STATE if nothing is connected,
+ *         ESP_FAIL if the stack refuses the terminate (including a link
+ *         that has just gone).
  */
 esp_err_t kb_ble_disconnect(void);
 

@@ -46,9 +46,10 @@ static uint8_t s_last_error = 0;
 /* Current HID mode (read from NVS at startup) */
 static uint8_t s_hid_mode = HID_MODE_BOOT_KB;
 
-/* Connect window and session pass. Touched from the NimBLE host task (link
- * events, AUTH packets) and from the main loop (deadline, LED), so every
- * access after start-up is inside s_auth_mux (kb_auth_init runs before the
+/* Connect window and session pass. Written from the NimBLE host task (link
+ * events, AUTH packets); read from the main loop (deadline, LED), from the
+ * wired UART receive task (status requests) and from the Wi-Fi proxy task
+ * (the BLE reply gate), so every access after start-up is inside s_auth_mux (kb_auth_init runs before the
  * transports start). The sections are a few instructions long. */
 static kb_auth_t s_auth;
 static portMUX_TYPE s_auth_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -357,6 +358,17 @@ static void hid_process_task(void *param)
     while (1) {
         if (xQueueReceive(s_packet_queue, &qp, portMAX_DELAY) == pdTRUE) {
             esp_err_t err = hid_bridge_process_packet(&qp.packet);
+            /* A release the firmware queued itself (transport NONE) must not
+             * be lost: the endpoint stays busy until the host's next poll, and
+             * in composite mode two releases are queued back to back. */
+            if (qp.transport == KB_TRANSPORT_NONE) {
+                for (int i = 0;
+                     i < 5 && err == ESP_ERR_INVALID_STATE && hid_bridge_is_ready();
+                     i++) {
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                    err = hid_bridge_process_packet(&qp.packet);
+                }
+            }
             if (err == ESP_OK) {
                 /* Successful packet clears any prior latched error so the
                  * status LED can leave the error state when things recover. */
@@ -526,6 +538,7 @@ void app_main(void)
         uint8_t auth_flags = kb_auth_flags(&s_auth, t);
         taskEXIT_CRITICAL(&s_auth_mux);
         static bool drop_logged = false;
+        static bool closed_logged = false;
         if (drop) {
             kb_ble_disconnect();
             if (!drop_logged) {
@@ -535,9 +548,13 @@ void app_main(void)
         } else {
             drop_logged = false;
         }
-        led_status_set_window(
-            (auth_flags & KB_STATUS_FLAG_WINDOW_OPEN) != 0,
-            (auth_flags & (KB_STATUS_FLAG_WINDOW_OPEN | KB_STATUS_FLAG_PASS_ISSUED)) == 0);
+        bool window_open = (auth_flags & KB_STATUS_FLAG_WINDOW_OPEN) != 0;
+        bool locked = (auth_flags & (KB_STATUS_FLAG_WINDOW_OPEN | KB_STATUS_FLAG_PASS_ISSUED)) == 0;
+        if (locked && !closed_logged) {
+            ESP_LOGW(TAG, "Connect window closed with no browser: unplug and replug to reopen");
+            closed_logged = true;
+        }
+        led_status_set_window(window_open, locked);
 
         /* ---- LED status ----
          * Push the current link/HID flags into the LED layer. The LED task
