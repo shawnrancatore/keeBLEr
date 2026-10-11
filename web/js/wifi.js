@@ -21,7 +21,8 @@ import { loadToken, saveToken, dropToken, hasAnyToken } from './wifi-token.js';
 // ---------------------------------------------------------------------------
 
 // The board a Wi-Fi token belongs to: the Bluetooth device now connected.
-// The wired serial link has no identity, so it uses the single old slot.
+// The wired serial link has no identity: every board used over the wire
+// shares one entry of its own.
 function currentBoardId() {
   return state.transport === 'ble' && state.bleDevice ? state.bleDevice.id : null;
 }
@@ -442,6 +443,11 @@ function _handleWifiStatus(payload) {
 
 // --- Token response handler ---
 
+function _warnIfUnsaved(saved) {
+  if (saved) return;
+  log('warn', "This browser could not save the board's WiFi token. WiFi settings on this board cannot be changed from here once you disconnect.");
+}
+
 function _handleTokenResponse(payload) {
   if (payload.length < 18) return;
   const valid = payload[0];
@@ -450,14 +456,14 @@ function _handleTokenResponse(payload) {
   const allZero = token.every(b => b === 0);
 
   if (valid) {
-    storeToken(token);
+    _warnIfUnsaved(storeToken(token));
     log('info', `WiFi token ${hasCreds ? 'valid (credentials stored)' : 'valid'}`);
   } else if (!allZero) {
     // This packet also answers a WiFi connect, where the first byte means
     // "WiFi connected", not "token accepted". The firmware includes the token
     // only for a caller that passed its token check, so keep it: on a first
     // setup this reply is the only copy the browser gets.
-    storeToken(token);
+    _warnIfUnsaved(storeToken(token));
     log('info', 'WiFi token received from device');
   } else if (getStoredToken()) {
     // The board refused our token. Since firmware 1.4.0 a refusal carries no
@@ -469,6 +475,9 @@ function _handleTokenResponse(payload) {
     // browser does not hold.
     log('info', 'This board has WiFi settings saved by another browser');
   }
+
+  // The token may have just been stored or dropped: bring the panel in line.
+  _updateWifiUI();
 
   // Resolve pending validate
   if (_pendingValidate) {

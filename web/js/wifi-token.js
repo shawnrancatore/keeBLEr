@@ -7,9 +7,17 @@
 // that board's own entry.
 //
 // Before firmware 1.4.0 the app kept a single token for every board, under
-// LEGACY_KEY. It is still read: a board this browser has no entry for is
-// offered the old token once. It is never deleted here, because it may belong
-// to a board that has not been seen yet.
+// LEGACY_KEY. That key is read-only here: this module never writes or removes
+// it, because it may belong to a Bluetooth board not seen yet.
+//
+// The wired serial link has no board identity, so it keeps one entry of its
+// own, shared by every board used over the wire.
+//
+// A link with no entry of its own is offered, in order: the old token; then
+// what the other kind of link holds. A Bluetooth board is offered the wired
+// link's token, and the wired link is offered the only Bluetooth board's token
+// when exactly one is stored. A board used over both links keeps working,
+// whichever link set it up.
 //
 // No DOM and no globals: storage is passed in, so this runs under `node --test`.
 
@@ -45,23 +53,53 @@ function read(storage, key) {
   }
 }
 
+// The wired serial link has no board identity. It gets one entry of its own.
+const SERIAL_ID = 'serial';
+
+function ownKey(boardId) {
+  return tokenKey(boardId || SERIAL_ID);
+}
+
+// The token of the only Bluetooth board this browser holds one for, or null
+// when there is none or more than one.
+function onlyBoardToken(storage) {
+  let found = null;
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key || !key.startsWith('keebler_wifi_token_') || key === tokenKey(SERIAL_ID)) continue;
+      const token = fromHex(storage.getItem(key));
+      if (!token) continue;
+      if (found) return null; // more than one board: cannot tell which
+      found = token;
+    }
+  } catch {
+    return null;
+  }
+  return found;
+}
+
 /**
  * The token to present to this board, or null when there is none (the caller
  * then sends 16 zero bytes, which asks a board with no token to issue one).
- * boardId is null when the board has no identity (the wired serial link).
+ * boardId is null for the wired serial link.
  */
 export function loadToken(storage, boardId) {
-  if (boardId) {
-    const own = read(storage, tokenKey(boardId));
-    if (own !== null) return fromHex(own); // its token, or the "none" marker
-  }
-  return fromHex(read(storage, LEGACY_KEY));
+  const own = read(storage, ownKey(boardId));
+  if (own !== null) return fromHex(own); // its token, or the "none" marker
+
+  // Nothing of its own yet. First the token the old app kept for every board.
+  const old = fromHex(read(storage, LEGACY_KEY));
+  if (old) return old;
+
+  // Then what the other kind of link holds: one board may be used over both.
+  return boardId ? fromHex(read(storage, tokenKey(SERIAL_ID))) : onlyBoardToken(storage);
 }
 
-/** The board accepted or issued this token: it is this board's. Returns false if it could not be saved. */
+/** The board (or, for a null boardId, the wired link) accepted or issued this token. Returns false if it could not be saved. */
 export function saveToken(storage, boardId, token) {
   try {
-    storage.setItem(boardId ? tokenKey(boardId) : LEGACY_KEY, toHex(token));
+    storage.setItem(ownKey(boardId), toHex(token));
     return true;
   } catch {
     return false;
@@ -69,17 +107,13 @@ export function saveToken(storage, boardId, token) {
 }
 
 /**
- * This board refused the token we presented, or was told to forget its Wi-Fi
- * settings: present no token to it next time. Other boards' entries, and the
- * old single token, are left alone.
+ * This board (or the wired link) refused the token we presented, or was told
+ * to forget its Wi-Fi settings: present no token next time. Other entries and
+ * the old single token are left alone.
  */
 export function dropToken(storage, boardId) {
   try {
-    if (boardId) {
-      storage.setItem(tokenKey(boardId), NO_TOKEN);
-    } else {
-      storage.removeItem(LEGACY_KEY);
-    }
+    storage.setItem(ownKey(boardId), NO_TOKEN);
   } catch {
     // Nothing we can change; the next request is refused or accepted on its merits.
   }

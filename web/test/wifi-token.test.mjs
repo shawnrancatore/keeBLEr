@@ -82,14 +82,65 @@ test('after a refusal a board can be given a new token', () => {
   assert.deepEqual(loadToken(s, 'b'), TB);
 });
 
-test('no board identity: the old single slot, as before', () => {
+test('the wired link has its own entry', () => {
   const s = memoryStorage();
   saveToken(s, null, TA);
-  assert.ok(s.has(LEGACY_KEY));
-  assert.deepEqual(loadToken(s, null), TA);
-  dropToken(s, null);
+  assert.ok(s.has('keebler_wifi_token_serial'));
   assert.ok(!s.has(LEGACY_KEY));
+  assert.deepEqual(loadToken(s, null), TA);
+});
+
+test('the wired link never deletes or overwrites the old token', () => {
+  const s = memoryStorage({ [LEGACY_KEY]: hex(0xc3) });
+  assert.deepEqual(loadToken(s, null), L);
+  dropToken(s, null);
+  assert.equal(s.raw(LEGACY_KEY), hex(0xc3));
   assert.equal(loadToken(s, null), null);
+  saveToken(s, null, TB);
+  assert.equal(s.raw(LEGACY_KEY), hex(0xc3));
+  assert.deepEqual(loadToken(s, null), TB);
+  assert.deepEqual(loadToken(s, 'a'), L);
+});
+
+test('one board, Bluetooth first, then the wire', () => {
+  const s = memoryStorage();
+  saveToken(s, 'a', TA);
+  assert.deepEqual(loadToken(s, null), TA);
+});
+
+test('two Bluetooth boards: the wire is offered neither', () => {
+  const s = memoryStorage();
+  saveToken(s, 'a', TA);
+  saveToken(s, 'b', TB);
+  assert.equal(loadToken(s, null), null);
+});
+
+test('a board marked "none" does not count as the only board', () => {
+  const s = memoryStorage();
+  saveToken(s, 'a', TA);
+  dropToken(s, 'b');
+  assert.deepEqual(loadToken(s, null), TA);
+});
+
+test('one board, the wire first, then Bluetooth', () => {
+  const s = memoryStorage();
+  saveToken(s, null, TA);
+  assert.deepEqual(loadToken(s, 'a'), TA);
+});
+
+test('the old token comes before the other link\'s', () => {
+  const s = memoryStorage({ [LEGACY_KEY]: hex(0xc3) });
+  saveToken(s, null, TA);
+  assert.deepEqual(loadToken(s, 'x'), L);
+});
+
+test('a Bluetooth refusal still touches only that board', () => {
+  const s = memoryStorage();
+  saveToken(s, null, TA);
+  saveToken(s, 'a', TB);
+  dropToken(s, 'a');
+  assert.deepEqual(loadToken(s, null), TA);
+  assert.equal(loadToken(s, 'a'), null);
 });
 
 test('a damaged value reads as no token', () => {
