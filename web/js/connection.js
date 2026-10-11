@@ -7,9 +7,11 @@ import {
   SERIAL_BAUD, TYPE_KEYBOARD_REPORT, TYPE_MOUSE_REPORT, TYPE_STATUS_REQUEST,
   TYPE_STATUS_RESPONSE, TYPE_HEARTBEAT, TYPE_HEARTBEAT_ACK, TYPE_ACK, TYPE_ECHO,
   TYPE_NAMES, BOARD_NAMES, TRANSPORT_NAMES,
+  TYPE_AUTH, TYPE_AUTH_RESULT, ACK_UNKNOWN_TYPE, ACK_NOT_AUTHENTICATED,
   buildFrame, FrameParser,
 } from './protocol.js';
 import { log, setConnectionStatus, updateDeviceStatus } from './ui.js';
+import { runAuth, createDeniedSet, shouldRetry, DENIED_MESSAGE, UNSAVED_MESSAGE } from './auth.js';
 
 // ---------------------------------------------------------------------------
 // Forward-declared callbacks — set by keyboard.js and mouse.js via setters
@@ -28,6 +30,31 @@ export function setReleaseAllMouseButtons(fn) { _releaseAllMouseButtons = fn; }
 let _wifiFrameHandler = null;
 
 export function registerWifiHandler(handler) { _wifiFrameHandler = handler; }
+
+// ---------------------------------------------------------------------------
+// Connect window — waiting for the board's answer to AUTH
+// ---------------------------------------------------------------------------
+
+// Devices that refused this browser. No reconnect or auto-connect is tried for
+// them until the user clicks Connect.
+const _deniedDevices = createDeniedSet();
+
+let _authWaiter = null;
+
+function waitAuthReply(timeoutMs) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (_authWaiter === waiter) _authWaiter = null;
+      resolve(null);
+    }, timeoutMs);
+    const waiter = (reply) => {
+      clearTimeout(timer);
+      if (_authWaiter === waiter) _authWaiter = null;
+      resolve(reply);
+    };
+    _authWaiter = waiter;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // BLE write serialization
@@ -51,6 +78,9 @@ function bleWriteSerialized(char, data) {
 // ---------------------------------------------------------------------------
 
 export async function sendFrame(type, payload) {
+  // Until the board has answered AUTH, AUTH is the only packet sent.
+  if (state.authPending && type !== TYPE_AUTH) return;
+
   const frame = buildFrame(type, payload);
 
   try {
@@ -125,11 +155,16 @@ export function handleFrame(type, payload) {
         state.deviceBoard = payload[1];
         state.deviceTransport = payload[2];
         state.deviceError = payload[3];
+        state.deviceFlags = payload.length >= 5 ? payload[4] : null;
         updateDeviceStatus();
         log('success', `Device status: v${payload[0]}, board=${BOARD_NAMES[payload[1]] || payload[1]}, transport=${TRANSPORT_NAMES[payload[2]] || payload[2]}, error=${payload[3]}`);
       } else {
         log('warn', `STATUS_RESPONSE too short: ${payload.length} bytes`);
       }
+      break;
+
+    case TYPE_AUTH_RESULT:
+      if (_authWaiter) _authWaiter({ kind: 'result', payload });
       break;
 
     case TYPE_HEARTBEAT_ACK:
@@ -143,7 +178,12 @@ export function handleFrame(type, payload) {
     case TYPE_ACK:
       if (payload.length >= 1) {
         const ackStatus = payload[0];
-        if (ackStatus !== 0) {
+        if (_authWaiter && ackStatus === ACK_UNKNOWN_TYPE) {
+          // Firmware 1.3 and older do not know AUTH.
+          _authWaiter({ kind: 'legacy' });
+        } else if (ackStatus === ACK_NOT_AUTHENTICATED) {
+          log('warn', 'The board refused a packet: this browser is not authorised');
+        } else if (ackStatus !== 0) {
           log('warn', `ACK with error status: 0x${ackStatus.toString(16)}`);
         }
       }
@@ -212,13 +252,61 @@ export async function connectToDevice(device) {
   await txChar.startNotifications();
   txChar.addEventListener('characteristicvaluechanged', onBleTxNotification);
 
+  state.authPending = true;
   state.transport = 'ble';
-  state.reconnecting = false;
-  state.reconnectAttempts = 0;
   state.frameParser = new FrameParser(handleFrame);
 
+  // The connect window: AUTH is the first packet, and nothing else is sent
+  // until the board has answered.
+  setConnectionStatus('connecting', 'Authorising...');
+  let outcome;
+  try {
+    outcome = await runAuth({
+      send: (payload) => sendFrame(TYPE_AUTH, payload),
+      waitReply: waitAuthReply,
+      storage: localStorage,
+      deviceId: device.id,
+    });
+    state.authPending = false;
+  } catch (err) {
+    state.authPending = false;
+    if (!shouldRetry(err)) {
+      // Refused. Stop every retry for this device and say why.
+      _deniedDevices.deny(device.id);
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
+      }
+      cancelAutoConnect();
+      state.reconnecting = false;
+      state.reconnectAttempts = 0;
+      // No device to reconnect to, whatever fires while the link is torn down.
+      state.bleDevice = null;
+      cleanupConnection();
+      setConnectionStatus('error', 'Not authorised');
+      log('error', DENIED_MESSAGE);
+    } else {
+      // No usable answer. Reset the link state, so the caller's normal retry
+      // starts clean; `state.bleDevice` is kept for it.
+      cleanupConnection();
+    }
+    throw err;
+  }
+
+  state.reconnecting = false;
+  state.reconnectAttempts = 0;
+
   setConnectionStatus('connected', `Connected (BLE: ${device.name})`);
-  log('success', `BLE connected to "${device.name}"`);
+  if (outcome === 'granted') {
+    log('success', `BLE connected to "${device.name}" (this browser now holds the board's session pass)`);
+  } else if (outcome === 'granted-unsaved') {
+    log('success', `BLE connected to "${device.name}"`);
+    log('warn', UNSAVED_MESSAGE);
+  } else if (outcome === 'legacy') {
+    log('success', `BLE connected to "${device.name}" (older firmware: no connect window)`);
+  } else {
+    log('success', `BLE connected to "${device.name}"`);
+  }
 
   // Send clean key release + status request
   await sendFrame(TYPE_KEYBOARD_REPORT, new Uint8Array(8));
@@ -228,6 +316,7 @@ export async function connectToDevice(device) {
 
 // Manual connect — opens the browser device picker for first-time pairing
 export async function connectBle() {
+  _deniedDevices.clear();
   cancelAutoConnect();
   if (!navigator.bluetooth) {
     log('error', 'Web Bluetooth API not available. Use Chrome/Edge with HTTPS.');
@@ -249,6 +338,9 @@ export async function connectBle() {
     await connectToDevice(device);
 
   } catch (err) {
+    if (!shouldRetry(err)) {
+      return; // refused: connectToDevice already cleaned up and said why
+    }
     if (err.name === 'NotFoundError') {
       log('info', 'BLE device selection cancelled');
       setConnectionStatus('disconnected', 'Disconnected');
@@ -276,7 +368,8 @@ export async function autoConnectBle() {
   try {
     const devices = await navigator.bluetooth.getDevices();
     const keeblerDevices = devices.filter(d =>
-      d.name && d.name.toLowerCase().startsWith(BLE_DEVICE_NAME)
+      d.name && d.name.toLowerCase().startsWith(BLE_DEVICE_NAME) &&
+      !_deniedDevices.isDenied(d.id)
     );
 
     if (keeblerDevices.length === 0) return;
@@ -293,11 +386,17 @@ export async function autoConnectBle() {
         log('success', `Auto-connected to "${device.name}"`);
         return; // Success — stop trying
       } catch (err) {
+        if (!shouldRetry(err)) {
+          continue; // refused: try the next paired board
+        }
         log('info', `Auto-connect to "${device.name}" failed: ${err.message}`);
       }
     }
 
-    // All devices failed — retry in 5 seconds
+    // Every board refused: stay on "Not authorised", schedule nothing.
+    if (keeblerDevices.every(d => _deniedDevices.isDenied(d.id))) return;
+
+    // Some device failed without a refusal — retry in 5 seconds
     setConnectionStatus('disconnected', 'Disconnected (retrying...)');
     scheduleAutoConnect(5000);
 
@@ -330,7 +429,7 @@ export function cancelAutoConnect() {
 
 function onBleTxNotification(event) {
   const value = event.target.value;
-  const data = new Uint8Array(value.buffer);
+  const data = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   if (state.frameParser) {
     state.frameParser.feed(data);
   }
@@ -341,7 +440,9 @@ function onBleTxNotification(event) {
 // ---------------------------------------------------------------------------
 
 export function handleBleDisconnect() {
-  const wasConnected = state.transport === 'ble';
+  // A link that drops while AUTH is pending is not yet "connected"; the code
+  // that called connectToDevice handles that failure itself.
+  const wasConnected = state.transport === 'ble' && !state.authPending;
   // Reset BLE write queue so stale promises don't block reconnect
   _bleWriteQueue = Promise.resolve();
   cleanupConnection();
@@ -408,6 +509,9 @@ export function attemptReconnect() {
       log('success', 'BLE reconnected');
 
     } catch (err) {
+      if (!shouldRetry(err)) {
+        return; // refused: connectToDevice already stopped everything
+      }
       log('warn', `Reconnect attempt ${state.reconnectAttempts} failed: ${err.message}`);
       state.reconnecting = false;
       attemptReconnect();
@@ -520,22 +624,32 @@ export function cleanupSerial() {
 
 export function cleanupConnection() {
   stopHeartbeat();
+  // A link that goes away while AUTH is pending must not leave its waiter
+  // behind for the next link: end the wait now (no answer).
+  if (_authWaiter) _authWaiter(null);
+  state.authPending = false;
   // Clear local key/button state without sending (link may be dead)
   _releaseAllKeys(false);
   _releaseAllMouseButtons(false);
 
-  if (state.transport === 'ble') {
+  // Clear the transport BEFORE tearing the link down. A browser may fire
+  // 'gattserverdisconnected' synchronously inside gatt.disconnect(); the
+  // handler must find no live link, or it would start a reconnect for a link
+  // the app itself is closing.
+  const transport = state.transport;
+  state.transport = null;
+  if (transport === 'ble') {
     cleanupBle();
-  } else if (state.transport === 'serial') {
+  } else if (transport === 'serial') {
     cleanupSerial();
   }
 
-  state.transport = null;
   state.frameParser = null;
   state.deviceVersion = null;
   state.deviceBoard = null;
   state.deviceTransport = null;
   state.deviceError = null;
+  state.deviceFlags = null;
   updateDeviceStatus();
 }
 
@@ -549,8 +663,8 @@ export function disconnect() {
   state.reconnecting = false;
   state.reconnectAttempts = 0;
 
-  cleanupConnection();
   state.bleDevice = null;
+  cleanupConnection();
 
   setConnectionStatus('disconnected', 'Disconnected');
   log('info', 'Disconnected (auto-connect paused — click Connect BLE to resume)');

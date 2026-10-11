@@ -3,7 +3,7 @@
 **keeBLEr** = keyboard **BLE** enabler
 
 <!-- bricoleur:intro -->
-> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand.
+> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand. Related: **[capurnion](https://github.com/bricoleur-ai/capurnion)**, another tool that works from the browser you already have open.
 <!-- /bricoleur:intro -->
 
 A wireless keyboard bridge. Plug a tiny ESP32-S3 board into any computer's USB port, open a browser on your other computer, and type — wirelessly, over Bluetooth Low Energy. No drivers, no pairing menus, no apps to install.
@@ -47,9 +47,11 @@ The ESP32-S3's USB port plugs into the computer you want to control. It shows up
 
 ### 3. Open the web app
 
-Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing.
+Open [`https://shawnrancatore.github.io/keeBLEr/`](https://shawnrancatore.github.io/keeBLEr/) in Chrome or Edge on your controlling computer. Click **Connect BLE**, select your keeBLEr device, and start typing. Do this within 60 seconds of plugging the board in: the first browser to connect in that time claims the board (see [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140)). If you miss it, the LED shows two short blue blinks every 2 seconds: unplug the board, plug it back in, and connect again.
 
-On subsequent visits, it auto-connects to your paired device.
+On later visits the web app reconnects on its own while the board has stayed powered. After the board has been unplugged, open the web app within 60 seconds of plugging it back in (it reconnects on its own), or click **Connect BLE** within that time.
+
+A tab you leave open keeps trying on its own when the board goes away: it makes up to ten reconnect attempts, then checks for the paired board again every 5 seconds. The second step needs a browser that supports `getDevices` for Web Bluetooth; without it, click **Connect BLE** once the board is back. A tab that was refused ("Not authorised") stops trying until you click **Connect BLE**.
 
 **The full guide**, from parts to protocol, is at [bricoleur.ai/projects/keebler](https://bricoleur.ai/projects/keebler).
 
@@ -58,7 +60,7 @@ On subsequent visits, it auto-connects to your paired device.
 - **Wireless keyboard and mouse** — BLE GATT, no line-of-sight needed, ~10m range
 - **Universal compatibility** — boot protocol keyboard works in BIOS, UEFI, KVMs, retro computers
 - **Two HID modes** — boot keyboard (max compatibility) or composite keyboard+mouse, toggled via BOOT button
-- **Auto-reconnect** — reconnects automatically on page load, survives device reboots
+- **Auto-reconnect** — reconnects automatically on page load, and an open tab retries by itself when the board comes back (after a restart, within the 60-second connect window)
 - **No install** — runs in any Chromium browser (Chrome, Edge, Brave) over HTTPS
 - **Web Serial fallback** — UART transport for development and recovery
 - **Browser-based flasher** — flash firmware without installing a toolchain
@@ -83,7 +85,7 @@ keeBLEr was built to solve a specific problem: controlling a [Commodore 64 Ultim
 USB HID stack.
 ## HID modes
 
-Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots.
+Press the **BOOT button** (GPIO 0) to toggle. Mode persists across reboots. Changing the mode restarts the board, which ends the connection and opens a new 60-second connect window; an open web app reconnects on its own.
 
 | Mode | Description | Compatibility |
 |------|-------------|---------------|
@@ -141,16 +143,36 @@ The device advertises as **"keebler \<version\>"** and exposes a custom GATT ser
 
 LENGTH = payload bytes only. CRC-8 polynomial 0x07 over TYPE + PAYLOAD.
 
+A frame longer than the connection allows in one notification (the ATT MTU minus 3 bytes) is sent as several notifications. Treat notifications from the device as a byte stream and find each frame by its magic byte and LENGTH, not by notification boundaries.
+
 | Type | Name | Payload |
 |------|------|---------|
 | `0x01` | KEYBOARD_REPORT | modifiers(1) + reserved(1) + keycodes(6) |
 | `0x02` | MOUSE_REPORT | buttons(1) + dx(1) + dy(1) + wheel(1) + pan(1) |
 | `0x10` | STATUS_REQUEST | *(empty)* |
-| `0x11` | STATUS_RESPONSE | version(1) + board(1) + transport(1) + error(1) |
+| `0x11` | STATUS_RESPONSE | version(1) + board(1) + transport(1) + error(1) + flags(1) |
 | `0x20` | HEARTBEAT | sequence(1) |
 | `0x21` | HEARTBEAT_ACK | sequence(1) |
+| `0x30` | AUTH | *(empty)*, or the 16-byte session pass |
+| `0x31` | AUTH_RESULT | status(1), plus the 16-byte pass when the status is GRANTED |
 | `0xFE` | ACK | status(1) |
 | `0xFF` | ECHO | variable — loopback test |
+
+### Connect window and session pass (protocol 2, firmware 1.4.0)
+
+Plug the board in, then connect from your browser within a minute. That browser now owns the board until it is unplugged, and other browsers and devices are refused. To hand the board to a different browser, or when the LED shows two short blue blinks, unplug the board and plug it back in.
+
+For 60 seconds after the board starts, the board gives the first browser that connects a session pass: 16 random bytes, kept in RAM only. From then until the board restarts, it serves only a connection that presents that pass. In more detail:
+
+- The web app sends AUTH as its first packet: empty the first time, the stored pass afterwards. While the window is open and no pass has been issued, the board grants any AUTH that is empty or carries 16 bytes and ignores the bytes sent (an AUTH of any other length is refused), which is how a browser that still holds an old pass is granted a new one after a restart.
+- AUTH_RESULT status: `0x00` OK (the pass matched), `0x01` GRANTED (a new pass follows), `0x02` DENIED (the board disconnects about 200 ms later).
+- Before AUTH succeeds, the board accepts only STATUS_REQUEST, AUTH and HEARTBEAT. Anything else gets ACK `0x20` NOT_AUTHENTICATED.
+- A connection that has not authenticated within 5 seconds is dropped.
+- STATUS_RESPONSE flags: bit 0 the window is open and no browser has claimed the board yet, bit 1 a pass has been issued, bit 2 this connection is authenticated.
+- The wired serial path is not gated: anything wired to the board's UART pins can type without a pass.
+- Any restart of the board clears the pass and opens a new window: unplugging it, the BOOT-button mode switch, re-flashing, a crash, or the target computer cutting USB power (for example when it goes to sleep). If your target sleeps and cuts power to its USB ports, the board restarts when power returns, and the browser has 60 seconds to connect again.
+
+**What this does not do.** It is not encryption and not pairing. The link is still unencrypted: someone with a Bluetooth sniffer nearby can read keystrokes, and can capture the pass during a connection. Whoever connects first within the 60 seconds gets the board; if someone else's browser gets there before yours, it holds the board until the board restarts. Anyone who can restart the board can claim it. A device without the pass cannot type and is disconnected within about 5 seconds, but the board takes one connection at a time, so a device that keeps reconnecting can get in the way of yours. What the window does stop is a stranger's phone or laptop connecting and typing.
 
 ## Project structure
 
@@ -162,13 +184,17 @@ keebler/
     ble_transport.c/h        #   NimBLE GATT peripheral
     serial_transport.c/h     #   UART fallback
     protocol.h               #   Packet protocol, CRC, frame parser
+    auth.c/h                 #   Connect window and session pass rules (pure C)
     board_config.h           #   Board abstraction
     wifi_proxy.c/h           #   WiFi STA/AP + HTTP proxy (AV/64 tiers)
+  firmware/test/host/        # Host-side tests for auth.c and protocol.h (make test)
   web/                       # Browser app (vanilla JS, ES modules)
     index.html               #   keeBLEr base tier
     av/                      #   keeBLEr AV tier
     64/                      #   keeBLEr64 tier
     js/                      #   Shared modules
+    js/auth.js               #   Session pass storage and the AUTH step
+    test/                    #   Web tests (cd web && npm test)
     flash.html               #   Browser-based firmware flasher
   docker/                    # HTTPS web server configs
   docs/                      # Extended tier docs + C64 reference
@@ -185,6 +211,8 @@ The generic target works on most ESP32-S3 boards out of the box.
 ## What it doesn't do
 
 - It does not pair with the target over Bluetooth. The target only ever sees a USB keyboard (and, in composite mode, a mouse), so it needs a free USB port.
+- Only the first browser to connect within 60 seconds of the board starting can type, and only until the board restarts. This is not encryption or pairing: the Bluetooth link is not encrypted, so someone nearby with a sniffer can read your keystrokes and capture the pass, and anyone who can restart the board can claim it. See [Connect window and session pass](#connect-window-and-session-pass-protocol-2-firmware-140).
+- The board's Wi-Fi settings (keeBLEr64) are tied to the browser that set them up. See [WiFi security](docs/c64-mode.md#wifi-security).
 - It needs a Chromium browser (Chrome, Edge or Brave) on the controlling computer.
 - Boot keyboard mode has no mouse. That is the price of working everywhere.
 
@@ -195,6 +223,8 @@ The generic target works on most ESP32-S3 boards out of the box.
 | `ACK error 0x03` | USB HID not mounted — wait ~10s for enumeration, check cable |
 | BLE won't connect | Ensure HTTPS, use Chrome/Edge |
 | XIAO shows as `303a:1001` after flash | Unplug and replug |
+| The web app says "Not authorised", or the LED shows two short blue blinks every 2 seconds | Another browser claimed the board, this browser lost its saved pass (cleared site data, or a different browser or profile), nobody connected in the first 60 seconds, or the web app was opened from a different address than before (the public site versus a local or self-hosted copy: the browser saves the pass per site). Unplug the board, plug it back in, and connect within 60 seconds |
+| The log shows `ACK with error status: 0x20` and the connection drops every 5 seconds | An old copy of the web app is talking to 1.4.0 firmware: a tab left open from before the update, or the copy the browser cached for offline use. Reload the page; the app serves its cached copy while it fetches the new one, so if the error is still there, reload once more (or hard-reload with Ctrl+Shift+R). Closing the other keeBLEr tabs first is not needed |
 | Keys stuck after disconnect | Fixed in firmware — auto key-release on BLE disconnect |
 
 ## License

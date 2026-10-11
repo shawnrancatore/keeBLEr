@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // keeBLEr service worker — stale-while-revalidate caching
 
-const CACHE_NAME = 'keebler-v2';
+const CACHE_NAME = 'keebler-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,9 @@ const ASSETS = [
   './js/state.js',
   './js/ui.js',
   './js/connection.js',
+  './js/auth.js',
+  './js/wifi.js',
+  './js/wifi-token.js',
   './js/keyboard.js',
   './js/mouse.js',
   './js/capture.js',

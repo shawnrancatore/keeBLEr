@@ -31,6 +31,16 @@ extern "C" {
 esp_err_t kb_wifi_init(void);
 
 /**
+ * Register the check that decides whether a reply may go out over BLE.
+ * wifi_proxy.c asks it before every BLE send. With no check registered,
+ * nothing is sent over BLE (fail closed). Call before kb_wifi_init().
+ *
+ * @param allowed  Returns true while the current BLE link is authenticated.
+ *                 Called from the NimBLE host task and the Wi-Fi worker task.
+ */
+void kb_wifi_set_ble_reply_check(bool (*allowed)(void));
+
+/**
  * Process an incoming WiFi or HTTP proxy packet.
  * Called from the BLE/UART packet callback context.
  * Handles packet types 0x40-0x58.

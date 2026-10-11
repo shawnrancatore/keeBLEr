@@ -24,13 +24,13 @@ extern "C" {
 /* ---------- Constants ---------- */
 
 #define KB_MAGIC                0x4B
-#define KB_PROTOCOL_VERSION     1
+#define KB_PROTOCOL_VERSION     2
 
 /* Firmware version — bump on every release */
 #define KB_VERSION_MAJOR        1
-#define KB_VERSION_MINOR        3
+#define KB_VERSION_MINOR        4
 #define KB_VERSION_PATCH        0
-#define KB_VERSION_STRING       "1.3.0"
+#define KB_VERSION_STRING       "1.4.0"
 #define KB_MAX_PAYLOAD          128
 /* Frame overhead: MAGIC(1) + LENGTH(1) + TYPE(1) + CRC8(1) = 4 */
 #define KB_FRAME_OVERHEAD       4
@@ -71,12 +71,17 @@ extern "C" {
 #define KB_PKT_ACK              0xFE
 #define KB_PKT_ECHO             0xFF
 
+/* Connect window and session pass (protocol 2) */
+#define KB_PKT_AUTH             0x30  /* host->dev: empty, or the 16-byte pass */
+#define KB_PKT_AUTH_RESULT      0x31  /* dev->host: status(1), plus pass(16) when GRANTED */
+
 /* ---------- Payload sizes ---------- */
 
 #define KB_KEYBOARD_REPORT_LEN  8   /* modifiers(1) + reserved(1) + keycodes(6) */
 #define KB_MOUSE_REPORT_LEN     5   /* buttons(1) + dx(1) + dy(1) + wheel(1) + pan(1) */
 #define KB_STATUS_REQUEST_LEN   0
-#define KB_STATUS_RESPONSE_LEN  4   /* version(1) + board_type(1) + transport(1) + last_error(1) */
+#define KB_STATUS_RESPONSE_LEN  5   /* version(1) + board_type(1) + transport(1) + last_error(1) + flags(1) */
+#define KB_AUTH_PASS_LEN        16
 #define KB_HEARTBEAT_LEN        1   /* sequence(1) */
 #define KB_HEARTBEAT_ACK_LEN    1   /* sequence(1) */
 #define KB_ACK_LEN              1   /* status(1) */
@@ -106,6 +111,19 @@ extern "C" {
 #define KB_ACK_ERR_WIFI_NO_CREDS 0x12
 #define KB_ACK_ERR_HTTP_IN_PROGRESS 0x13
 #define KB_ACK_ERR_HTTP_TOO_LARGE 0x14
+#define KB_ACK_ERR_NOT_AUTHENTICATED 0x20
+
+/* ---------- AUTH_RESULT status ---------- */
+
+#define KB_AUTH_RESULT_OK       0x00  /* the pass matched */
+#define KB_AUTH_RESULT_GRANTED  0x01  /* a new pass was issued; it follows in the payload */
+#define KB_AUTH_RESULT_DENIED   0x02  /* refused; the board disconnects shortly */
+
+/* ---------- STATUS_RESPONSE flags (5th byte) ---------- */
+
+#define KB_STATUS_FLAG_WINDOW_OPEN   0x01
+#define KB_STATUS_FLAG_PASS_ISSUED   0x02
+#define KB_STATUS_FLAG_AUTHENTICATED 0x04
 
 /* ---------- WiFi state ---------- */
 
@@ -163,6 +181,7 @@ typedef struct {
     uint8_t board_type;
     uint8_t transport;
     uint8_t last_error;
+    uint8_t flags;
 } __attribute__((packed)) kb_status_response_t;
 
 /* ---------- Generic packet ---------- */

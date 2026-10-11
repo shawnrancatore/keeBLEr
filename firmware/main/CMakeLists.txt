@@ -8,6 +8,7 @@ idf_component_register(
          "serial_transport.c"
          "wifi_proxy.c"
          "led_status.c"
+         "auth.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         nvs_flash

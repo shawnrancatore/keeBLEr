@@ -144,6 +144,19 @@ static bool s_http_in_progress = false;  /* true while worker executes HTTP */
 /*  Response helpers                                                         */
 /* ========================================================================= */
 
+static bool (*s_ble_reply_allowed)(void) = NULL;
+
+void kb_wifi_set_ble_reply_check(bool (*allowed)(void))
+{
+    s_ble_reply_allowed = allowed;
+}
+
+/** A reply may go out over BLE only while the current link is authenticated. */
+static bool ble_reply_allowed(void)
+{
+    return s_ble_reply_allowed != NULL && s_ble_reply_allowed();
+}
+
 static void send_response(uint8_t type, const uint8_t *payload, uint8_t len,
                           uint8_t transport)
 {
@@ -152,7 +165,9 @@ static void send_response(uint8_t type, const uint8_t *payload, uint8_t len,
     if (frame_len == 0) return;
 
     if (transport == KB_TRANSPORT_BLE) {
-        kb_ble_send(frame, frame_len);
+        if (ble_reply_allowed()) {
+            kb_ble_send(frame, frame_len);
+        }
     } else if (transport == KB_TRANSPORT_UART) {
         serial_transport_send(frame, frame_len);
     }
@@ -172,6 +187,10 @@ static void send_ble_with_backpressure(const uint8_t *frame, size_t frame_len,
 {
     if (transport == KB_TRANSPORT_BLE) {
         for (int attempt = 0; attempt < 5; attempt++) {
+            if (!ble_reply_allowed()) {
+                ESP_LOGD(TAG, "BLE link not authenticated, reply dropped");
+                return;
+            }
             esp_err_t err = kb_ble_send(frame, frame_len);
             if (err != ESP_ERR_NO_MEM) return;
             vTaskDelay(pdMS_TO_TICKS(HTTP_RETRY_DELAY_MS));
@@ -1120,7 +1139,12 @@ void kb_wifi_process_packet(const kb_packet_t *pkt, uint8_t transport)
         /* Payload: valid(1) token(16) has_creds(1) */
         uint8_t resp[1 + KB_WIFI_TOKEN_LEN + 1];
         resp[0] = valid ? 1 : 0;
-        memcpy(&resp[1], s_token, KB_WIFI_TOKEN_LEN);
+        /* Only a caller that proved it holds the token gets it back. */
+        if (valid) {
+            memcpy(&resp[1], s_token, KB_WIFI_TOKEN_LEN);
+        } else {
+            memset(&resp[1], 0, KB_WIFI_TOKEN_LEN);
+        }
         resp[1 + KB_WIFI_TOKEN_LEN] = has_stored_credentials() ? 1 : 0;
         send_response(KB_PKT_WIFI_TOKEN_RESPONSE, resp, sizeof(resp), transport);
         return;

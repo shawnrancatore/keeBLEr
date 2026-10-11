@@ -1,0 +1,9 @@
+{
+  "name": "keebler-web-tests",
+  "private": true,
+  "type": "module",
+  "description": "Test runner config only. The web app has no build step and no runtime packages.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
