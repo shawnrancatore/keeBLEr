@@ -52,6 +52,8 @@ main loop, so the absolute upper bound on stale rendering is ~250 ms.
 | Situation | Colour |
 |---|---|
 | **Idle** — no BLE, no WiFi | Blue blink, ~1 Hz (100 ms on, 900 ms off) |
+| **Connect window open**, no browser has claimed the board | Fast blue blink (4 Hz): the first 60 seconds after power-up, connect now |
+| **Window closed and never claimed** ("locked") | Two short blue blinks every 2 seconds: no browser connected in time, unplug the board and plug it back in |
 | **BLE connected**, no WiFi | Solid blue |
 | **BLE + WiFi AP active, no client yet** | Solid blue base, with a cyan flash followed by a yellow flash 500 ms later, repeating every 1 s |
 | **BLE + WiFi AP, client connected** | Solid cyan |
@@ -60,6 +62,8 @@ main loop, so the absolute upper bound on stale rendering is ~250 ms.
 | **WiFi AP, client connected**, no BLE | Solid green |
 | **WiFi AP listening**, no client, no BLE | Solid green base, with a cyan flash at the start of every second |
 | **Fatal error** at boot (e.g. HID bridge init failed) | Slow red blink, ~2 Hz |
+
+On boards with a plain LED the same patterns show as on and off; on boards with no LED, the serial log says `Connect window open for 60 s`.
 
 The base layer is recomputed every iteration of `main.c`'s main loop from
 fresh reads of `kb_ble_is_connected()`, `kb_wifi_get_state()`, and

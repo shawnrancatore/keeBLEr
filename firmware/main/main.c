@@ -525,7 +525,9 @@ void app_main(void)
         } else {
             drop_logged = false;
         }
-        (void)auth_flags; /* Task 5 feeds this to the LED */
+        led_status_set_window(
+            (auth_flags & KB_STATUS_FLAG_WINDOW_OPEN) != 0,
+            (auth_flags & (KB_STATUS_FLAG_WINDOW_OPEN | KB_STATUS_FLAG_PASS_ISSUED)) == 0);
 
         /* ---- LED status ----
          * Push the current link/HID flags into the LED layer. The LED task

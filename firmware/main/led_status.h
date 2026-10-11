@@ -6,6 +6,8 @@
  *
  *   1. BASE COLOR (long-running, derived from BLE/WiFi link state)
  *      - Idle (no BLE, no WiFi):              blue blink ~1 Hz
+ *      - Connect window open, unclaimed:      fast blue blink, 4 Hz
+ *      - Window closed, never claimed:        slow blue double blink
  *      - BLE only:                            solid blue
  *      - BLE + AP listening (no client):      blue base + cyan/yellow flashes
  *      - BLE + AP with client connected:      solid cyan
@@ -82,6 +84,17 @@ void led_status_set_link(bool ble_connected,
                          bool wifi_ap_active,
                          bool wifi_ap_has_client,
                          bool fatal_error);
+
+/**
+ * Tell the LED layer about the connect window. Call before led_status_set_link.
+ * Both only change what "nothing connected" looks like:
+ *
+ * @param window_open  The 60 s connect window is open and unclaimed:
+ *                     fast blue blink (4 Hz).
+ * @param locked       The window closed and no browser claimed the board:
+ *                     slow blue double blink. Power-cycle to reopen.
+ */
+void led_status_set_window(bool window_open, bool locked);
 
 /**
  * Notify the LED layer about USB HID mount state. When mounted, a brief

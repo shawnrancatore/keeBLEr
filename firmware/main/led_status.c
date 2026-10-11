@@ -93,6 +93,8 @@ static led_strip_handle_t s_strip = NULL;
 typedef enum {
     BASE_FATAL,             /* fatal_error: red blink */
     BASE_IDLE,              /* nothing connected: blue blink */
+    BASE_WINDOW_OPEN,       /* connect window open, unclaimed: fast blue blink */
+    BASE_LOCKED,            /* window closed, never claimed: slow double blink */
     BASE_BLE,               /* BLE only: solid blue */
     BASE_BLE_AP_LISTENING,  /* BLE + AP, no client: blue + cyan/yellow flashes */
     BASE_BLE_AP_CONNECTED,  /* BLE + AP + client: solid cyan */
@@ -104,6 +106,8 @@ typedef enum {
 
 static volatile led_base_t s_base = BASE_IDLE;
 static volatile bool s_hid_mounted = false;
+static volatile bool s_window_open = false;
+static volatile bool s_locked = false;
 static volatile kb_led_indication_t s_indication = KB_LED_IND_NONE;
 static volatile uint32_t s_indication_started_ms = 0;
 
@@ -156,6 +160,19 @@ static rgb_t render_base(led_base_t base, uint32_t phase_ms)
         return (p < IDLE_BLINK_ON_MS)
                    ? rgb_scale(MK(0, 0, 255), MAX_STEADY)
                    : COLOR_BLACK;
+    }
+
+    case BASE_WINDOW_OPEN: {
+        /* Blue blink at 4 Hz: 125 ms on, 125 ms off. */
+        bool on = ((phase_ms / 125) & 1) == 0;
+        return on ? rgb_scale(MK(0, 0, 255), MAX_STEADY) : COLOR_BLACK;
+    }
+
+    case BASE_LOCKED: {
+        /* Two 100 ms blue blinks 150 ms apart, every 2 s. */
+        uint32_t p = phase_ms % 2000;
+        bool on = (p < 100) || (p >= 250 && p < 350);
+        return on ? rgb_scale(MK(0, 0, 255), MAX_STEADY) : COLOR_BLACK;
     }
 
     case BASE_BLE:
@@ -439,10 +456,20 @@ void led_status_set_link(bool ble_connected,
         b = BASE_AP_CONNECTED;
     } else if (wifi_ap_active) {
         b = BASE_AP_LISTENING;
+    } else if (s_window_open) {
+        b = BASE_WINDOW_OPEN;
+    } else if (s_locked) {
+        b = BASE_LOCKED;
     } else {
         b = BASE_IDLE;
     }
     s_base = b;
+}
+
+void led_status_set_window(bool window_open, bool locked)
+{
+    s_window_open = window_open;
+    s_locked = locked;
 }
 
 void led_status_set_hid_mounted(bool mounted)
