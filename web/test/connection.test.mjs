@@ -2,7 +2,7 @@
 // Drives the real js/connection.js against fake boards.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { installFakeBrowser, setBluetooth, makeDevice, delay } from './helpers/fake-bluetooth.mjs';
+import { installFakeBrowser, setBluetooth, makeDevice, delay } from '../test-helpers/fake-bluetooth.mjs';
 
 const { state, store, view } = await installFakeBrowser();
 const proto = await import('../js/protocol.js');

@@ -31,7 +31,7 @@ export async function installFakeBrowser() {
     removeItem: (k) => { store.delete(k); },
   };
 
-  const { state, el } = await import('../../js/state.js');
+  const { state, el } = await import('../js/state.js');
   for (const k of ['devVersion', 'devBoard', 'devTransport', 'devError', 'devHeartbeat',
     'keyList', 'btnBle', 'btnSerial', 'btnDisconnect', 'btnLoopback', 'statusDot']) {
     el[k] = makeElement();
