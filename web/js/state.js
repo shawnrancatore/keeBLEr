@@ -31,6 +31,8 @@ export const state = {
   deviceTransport: null,
   deviceError: null,
   deviceFlags: null,
+  // True from the moment a BLE link is up until the board has answered AUTH.
+  authPending: false,
 
   // Heartbeat
   heartbeatInterval: null,

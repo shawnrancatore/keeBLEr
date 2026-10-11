@@ -78,6 +78,9 @@ function bleWriteSerialized(char, data) {
 // ---------------------------------------------------------------------------
 
 export async function sendFrame(type, payload) {
+  // Until the board has answered AUTH, AUTH is the only packet sent.
+  if (state.authPending && type !== TYPE_AUTH) return;
+
   const frame = buildFrame(type, payload);
 
   try {
@@ -249,6 +252,7 @@ export async function connectToDevice(device) {
   await txChar.startNotifications();
   txChar.addEventListener('characteristicvaluechanged', onBleTxNotification);
 
+  state.authPending = true;
   state.transport = 'ble';
   state.frameParser = new FrameParser(handleFrame);
 
@@ -263,7 +267,9 @@ export async function connectToDevice(device) {
       storage: localStorage,
       deviceId: device.id,
     });
+    state.authPending = false;
   } catch (err) {
+    state.authPending = false;
     if (!shouldRetry(err)) {
       // Refused. Stop every retry for this device and say why.
       _deniedDevices.deny(device.id);
@@ -380,13 +386,16 @@ export async function autoConnectBle() {
         return; // Success — stop trying
       } catch (err) {
         if (!shouldRetry(err)) {
-          return; // refused: no retry timer; the user must click Connect
+          continue; // refused: try the next paired board
         }
         log('info', `Auto-connect to "${device.name}" failed: ${err.message}`);
       }
     }
 
-    // All devices failed — retry in 5 seconds
+    // Every board refused: stay on "Not authorised", schedule nothing.
+    if (keeblerDevices.every(d => _deniedDevices.isDenied(d.id))) return;
+
+    // Some device failed without a refusal — retry in 5 seconds
     setConnectionStatus('disconnected', 'Disconnected (retrying...)');
     scheduleAutoConnect(5000);
 
@@ -430,7 +439,9 @@ function onBleTxNotification(event) {
 // ---------------------------------------------------------------------------
 
 export function handleBleDisconnect() {
-  const wasConnected = state.transport === 'ble';
+  // A link that drops while AUTH is pending is not yet "connected"; the code
+  // that called connectToDevice handles that failure itself.
+  const wasConnected = state.transport === 'ble' && !state.authPending;
   // Reset BLE write queue so stale promises don't block reconnect
   _bleWriteQueue = Promise.resolve();
   cleanupConnection();
@@ -615,6 +626,7 @@ export function cleanupConnection() {
   // A link that goes away while AUTH is pending must not leave its waiter
   // behind for the next link: end the wait now (no answer).
   if (_authWaiter) _authWaiter(null);
+  state.authPending = false;
   // Clear local key/button state without sending (link may be dead)
   _releaseAllKeys(false);
   _releaseAllMouseButtons(false);

@@ -13,6 +13,7 @@ const ASSETS = [
   './js/ui.js',
   './js/connection.js',
   './js/auth.js',
+  './js/wifi.js',
   './js/keyboard.js',
   './js/mouse.js',
   './js/capture.js',

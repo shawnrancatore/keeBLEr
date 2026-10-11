@@ -940,7 +940,7 @@ export function wifiInit() {
   // Poll for BLE connection to validate token and update icons
   let _bleWasConnected = false;
   setInterval(() => {
-    const bleNow = state.transport === 'ble';
+    const bleNow = state.transport === 'ble' && !state.authPending;
     if (bleNow !== _bleWasConnected) {
       _bleWasConnected = bleNow;
       _updateWifiUI();
