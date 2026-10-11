@@ -157,3 +157,75 @@ test('shouldRetry: never after a refusal, yes after other failures', () => {
   assert.equal(shouldRetry(new Error('GATT Server is disconnected')), true);
   assert.equal(shouldRetry(null), true);
 });
+
+// --- Fix round 1: a storage failure never locks the owner out ---
+
+/** Storage where one named operation throws, the others work. */
+function brokenStorage(op) {
+  const s = fakeStorage();
+  const fail = () => { throw new Error('storage blocked'); };
+  return { ...s, [op]: fail };
+}
+
+test('storage that throws on read: an empty AUTH is sent, GRANTED does not throw', async () => {
+  const s = brokenStorage('getItem');
+  const l = link(result(AUTH_GRANTED, PASS));
+  assert.equal(await runAuth({ send: l.send.bind(l), waitReply: l.waitReply, storage: s, deviceId: 'd' }), 'granted');
+  assert.deepEqual(l.sent, [[]]);
+});
+
+test('storage that throws on write: GRANTED resolves to granted-unsaved', async () => {
+  const s = brokenStorage('setItem');
+  const l = link(result(AUTH_GRANTED, PASS));
+  assert.equal(await runAuth({ send: l.send.bind(l), waitReply: l.waitReply, storage: s, deviceId: 'd' }), 'granted-unsaved');
+});
+
+test('storage that throws on remove: a refusal is still AuthDeniedError', async () => {
+  const s = brokenStorage('removeItem');
+  const l = link(result(AUTH_DENIED));
+  await assert.rejects(
+    runAuth({ send: l.send.bind(l), waitReply: l.waitReply, storage: s, deviceId: 'd' }),
+    (err) => err.name === 'AuthDeniedError',
+  );
+});
+
+test('savePass reports whether the pass was stored', () => {
+  assert.equal(savePass(fakeStorage(), 'd', PASS), true);
+  assert.equal(savePass(brokenStorage('setItem'), 'd', PASS), false);
+});
+
+test('a refusal touches only its own device', async () => {
+  const s = fakeStorage({ 'keebler_pass_a': PASS_HEX, 'keebler_pass_b': PASS_HEX });
+  const l = link(result(AUTH_DENIED));
+  await assert.rejects(runAuth({ send: l.send.bind(l), waitReply: l.waitReply, storage: s, deviceId: 'a' }));
+  assert.equal(s.getItem('keebler_pass_b'), PASS_HEX);
+  assert.equal(s.getItem('keebler_pass_a'), null);
+});
+
+test('a malformed answer keeps the stored pass', async () => {
+  const s = fakeStorage({ 'keebler_pass_d': PASS_HEX });
+  const l = link({ kind: 'result', payload: Uint8Array.of(0x7F) });
+  await assert.rejects(
+    runAuth({ send: l.send.bind(l), waitReply: l.waitReply, storage: s, deviceId: 'd' }),
+    (err) => err.name !== 'AuthDeniedError',
+  );
+  assert.equal(s.getItem('keebler_pass_d'), PASS_HEX);
+});
+
+test('GRANTED with extra bytes stores 16', () => {
+  const payload = new Uint8Array(1 + PASS_LEN + 2);
+  payload[0] = AUTH_GRANTED;
+  payload.set(PASS, 1);
+  payload.set([0xEE, 0xEE], 1 + PASS_LEN);
+  const parsed = parseAuthResult(payload);
+  assert.equal(parsed.pass.length, PASS_LEN);
+  assert.deepEqual(Array.from(parsed.pass), Array.from(PASS));
+});
+
+test('UNSAVED_MESSAGE is exported, non-empty, and holds no pass', async () => {
+  // Dynamic import, so the other red tests still run before the export exists.
+  const mod = await import('../js/auth.js');
+  assert.equal(typeof mod.UNSAVED_MESSAGE, 'string');
+  assert.ok(mod.UNSAVED_MESSAGE.length > 0);
+  assert.doesNotMatch(mod.UNSAVED_MESSAGE, /[0-9a-f]{32}/i);
+});

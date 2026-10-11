@@ -11,6 +11,9 @@ export const DENIED_MESSAGE =
   'This keeBLEr is already paired with another browser, or its connect window has closed. ' +
   'Unplug it, plug it back in, and connect within 60 seconds.';
 
+export const UNSAVED_MESSAGE =
+  "This browser could not save the board's session pass. The connection works until you disconnect. After that, unplug the board, plug it back in, and connect within 60 seconds.";
+
 export class AuthDeniedError extends Error {
   constructor() {
     super(DENIED_MESSAGE);
@@ -25,7 +28,12 @@ export function passKey(deviceId) {
 }
 
 export function loadPass(storage, deviceId) {
-  const hex = storage.getItem(passKey(deviceId));
+  let hex;
+  try {
+    hex = storage.getItem(passKey(deviceId));
+  } catch {
+    return null; // storage unavailable: behave as a browser with no pass
+  }
   if (!hex || !/^[0-9a-f]{32}$/i.test(hex)) return null;
   const bytes = new Uint8Array(PASS_LEN);
   for (let i = 0; i < PASS_LEN; i++) {
@@ -34,13 +42,23 @@ export function loadPass(storage, deviceId) {
   return bytes;
 }
 
+/** Returns true when the pass was stored, false when storage refused it. */
 export function savePass(storage, deviceId, pass) {
   const hex = Array.from(pass).map((b) => b.toString(16).padStart(2, '0')).join('');
-  storage.setItem(passKey(deviceId), hex);
+  try {
+    storage.setItem(passKey(deviceId), hex);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearPass(storage, deviceId) {
-  storage.removeItem(passKey(deviceId));
+  try {
+    storage.removeItem(passKey(deviceId));
+  } catch {
+    // Nothing we can clear; the next AUTH is refused or granted on its merits.
+  }
 }
 
 // --- AUTH_RESULT: status(1), plus pass(16) when granted ---
@@ -65,7 +83,8 @@ export function parseAuthResult(payload) {
  *                      { kind: 'legacy' } (firmware 1.3: "unknown type"),
  *                      or null when nothing came in time.
  *
- * Returns 'granted', 'ok' or 'legacy'. Throws AuthDeniedError when the board
+ * Returns 'granted', 'granted-unsaved' (authorised, but the pass could not be stored),
+ * 'ok' or 'legacy'. Throws AuthDeniedError when the board
  * refuses, and a plain Error when it gives no usable answer.
  */
 export async function runAuth({ send, waitReply, storage, deviceId, timeoutMs = 3000 }) {
@@ -81,8 +100,9 @@ export async function runAuth({ send, waitReply, storage, deviceId, timeoutMs = 
   if (!result) throw new Error('The board sent a malformed AUTH_RESULT');
 
   if (result.status === AUTH_GRANTED) {
-    savePass(storage, deviceId, result.pass);
-    return 'granted';
+    // The link is authorised either way. If the browser cannot keep the pass,
+    // the caller must say so: it will be refused after the next disconnect.
+    return savePass(storage, deviceId, result.pass) ? 'granted' : 'granted-unsaved';
   }
   if (result.status === AUTH_OK) return 'ok';
 
