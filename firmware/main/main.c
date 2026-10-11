@@ -48,7 +48,8 @@ static uint8_t s_hid_mode = HID_MODE_BOOT_KB;
 
 /* Connect window and session pass. Touched from the NimBLE host task (link
  * events, AUTH packets) and from the main loop (deadline, LED), so every
- * access is inside s_auth_mux. The sections are a few instructions long. */
+ * access after start-up is inside s_auth_mux (kb_auth_init runs before the
+ * transports start). The sections are a few instructions long. */
 static kb_auth_t s_auth;
 static portMUX_TYPE s_auth_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -181,9 +182,9 @@ typedef struct {
 static transport_ctx_t s_ble_ctx  = { .transport = KB_TRANSPORT_BLE };
 static transport_ctx_t s_uart_ctx = { .transport = KB_TRANSPORT_UART };
 
-/* Release every key, and in composite mode every mouse button. Reports from
- * the link that just ended are stale, so the queue is emptied first: the
- * release must not be lost behind them. Transport NONE means no ACK is sent.
+/* Release every key, and in composite mode every mouse button. The queue is
+ * emptied first so the release always has room, even in a full queue (FIFO
+ * order already puts it after any stale report). Transport NONE means no ACK is sent.
  * In boot-keyboard mode a mouse report is unsupported, so none is queued. */
 static void enqueue_release_all(void)
 {
@@ -206,6 +207,10 @@ static void enqueue_release_all(void)
     }
 }
 
+/* True once the current BLE link has queued a HID report. Touched only on the
+ * NimBLE host task. A link that never typed must not wipe queued UART reports. */
+static bool s_ble_sent_hid = false;
+
 /* Called from the NimBLE host task on connect and disconnect. */
 static void on_ble_link(bool connected, void *user_ctx)
 {
@@ -219,8 +224,13 @@ static void on_ble_link(bool connected, void *user_ctx)
     }
     taskEXIT_CRITICAL(&s_auth_mux);
 
-    if (!connected) {
-        enqueue_release_all();
+    if (connected) {
+        s_ble_sent_hid = false;
+    } else {
+        if (s_ble_sent_hid) {
+            enqueue_release_all();
+        }
+        s_ble_sent_hid = false;
     }
 }
 
@@ -304,6 +314,9 @@ static void on_packet_received(const kb_packet_t *pkt, void *user_ctx)
         queued_packet_t qp;
         memcpy(&qp.packet, pkt, sizeof(kb_packet_t));
         qp.transport = ctx->transport;
+        if (ctx->transport == KB_TRANSPORT_BLE) {
+            s_ble_sent_hid = true;
+        }
         if (xQueueSend(s_packet_queue, &qp, 0) != pdTRUE) {
             ESP_LOGW(TAG, "Packet queue full, dropping report");
             send_ack(KB_ACK_ERR_HID_FAIL, ctx->transport);
@@ -428,11 +441,11 @@ void app_main(void)
         ESP_LOGI(TAG, "HID bridge ready");
     }
 
-    /* Set BLE callback BEFORE init to avoid race with early connections */
     /* The connect window opens now and lasts KB_AUTH_WINDOW_MS. */
     kb_auth_init(&s_auth, now_ms());
     ESP_LOGI(TAG, "Connect window open for %d s", (int)(KB_AUTH_WINDOW_MS / 1000));
 
+    /* Set BLE callbacks BEFORE init to avoid race with early connections */
     kb_ble_set_rx_callback(on_packet_received, &s_ble_ctx);
     kb_ble_set_conn_callback(on_ble_link, NULL);
 
@@ -502,9 +515,15 @@ void app_main(void)
         bool drop = kb_auth_should_drop(&s_auth, t);
         uint8_t auth_flags = kb_auth_flags(&s_auth, t);
         taskEXIT_CRITICAL(&s_auth_mux);
+        static bool drop_logged = false;
         if (drop) {
-            ESP_LOGW(TAG, "Dropping an unauthenticated BLE connection");
             kb_ble_disconnect();
+            if (!drop_logged) {
+                ESP_LOGW(TAG, "Dropping an unauthenticated BLE connection");
+                drop_logged = true;
+            }
+        } else {
+            drop_logged = false;
         }
         (void)auth_flags; /* Task 5 feeds this to the LED */
 
