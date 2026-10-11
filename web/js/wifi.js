@@ -449,18 +449,32 @@ function _handleTokenResponse(payload) {
   const valid = payload[0];
   const token = payload.subarray(1, 17);
   const hasCreds = payload[17];
+  const allZero = token.every(b => b === 0);
 
   if (valid) {
     storeToken(token);
     log('info', `WiFi token ${hasCreds ? 'valid (credentials stored)' : 'valid'}`);
+  } else if (!allZero) {
+    // This packet also answers a WiFi connect, where the first byte means
+    // "WiFi connected", not "token accepted". The firmware includes the token
+    // only for a caller that passed its token check, so keep it: on a first
+    // setup this reply is the only copy the browser gets.
+    storeToken(token);
+    log('info', 'WiFi token received from device');
+  } else if (getStoredToken()) {
+    // The board refused our token. Since firmware 1.4.0 a refusal carries no
+    // token. Drop ours, so a board that has none can issue a new one.
+    clearToken();
+    log('info', 'WiFi token not accepted by this board; cleared it');
   } else {
-    // An invalid response carries no token: store nothing, clear nothing.
-    log('info', 'Wi-Fi token rejected');
+    // We sent no token and the board refused: it already has one that this
+    // browser does not hold.
+    log('info', 'This board has WiFi settings saved by another browser');
   }
 
   // Resolve pending validate
   if (_pendingValidate) {
-    _pendingValidate.resolve(!!valid);
+    _pendingValidate.resolve(!!valid || !allZero);
     _pendingValidate = null;
   }
 
