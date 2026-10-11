@@ -17,8 +17,8 @@ The colours are deliberate, not arbitrary:
 | **Cyan**    | BLE *and* WiFi (the natural mix of blue + green) |
 | **Magenta** | A 5-second heartbeat overlay that fires whenever the host has actually mounted the USB HID composite device |
 | **Red**     | Failure state — either a fatal init error (slow blink) or a transient operation failure (double-blink) |
-| **Yellow**  | Bad WiFi credentials (double-blink) |
-| **White**   | A successful operation (double-blink) |
+| **Yellow**  | Bad WiFi credentials, or a browser the board refused (double-blink) |
+| **White**   | A successful operation, or a browser just granted the session pass (double-blink) |
 
 Once you internalise *blue = BLE, green = WiFi, cyan = both*, the rest of the
 state machine is intuitive.
@@ -51,7 +51,7 @@ main loop, so the absolute upper bound on stale rendering is ~250 ms.
 
 | Situation | Colour |
 |---|---|
-| **Idle** — no BLE, no WiFi | Blue blink, ~1 Hz (100 ms on, 900 ms off) |
+| **Idle** — a browser has claimed the board and nothing is connected right now | Blue blink, ~1 Hz (100 ms on, 900 ms off) |
 | **Connect window open** | Fast blue blink (4 Hz): the first 60 seconds after power-up, until a browser claims the board. Connect now |
 | **Window closed, never claimed** ("locked") | Two short blue blinks every 2 seconds: no browser connected in time, unplug the board and plug it back in |
 | **BLE connected**, no WiFi | Solid blue |
@@ -65,7 +65,7 @@ main loop, so the absolute upper bound on stale rendering is ~250 ms.
 
 The two connect-window rows replace only the idle blink. They show when
 nothing is connected over BLE and WiFi has no connection or access point up,
-so an active WiFi access point (or a WiFi connection) hides them. Once a
+so an active WiFi access point (or a WiFi connection) hides them. A fatal error overrides them too. Once a
 browser has claimed the board, the idle blink returns whenever that browser
 is not connected. On boards with a plain LED the same patterns show as on and
 off.
@@ -83,8 +83,8 @@ fails an operation. They temporarily replace the base colour, then revert.
 | Indication | Colour | Duration | When fired |
 |---|---|---|---|
 | `WORKING`    | Soft spinning red → green → blue cycle, ~450 ms per full rotation | Loops until cleared (or ~30 s safety watchdog) | A WiFi scan or connect operation has started |
-| `SUCCESS`    | Double white blink | ~400 ms (one-shot) | Operation succeeded — scan returned, STA got an IP |
-| `FAIL_AUTH`  | Double yellow blink | ~400 ms (one-shot) | WiFi connect failed with an auth-related reason code (wrong password, EAPOL timeout, etc.) |
+| `SUCCESS`    | Double white blink | ~400 ms (one-shot) | Operation succeeded — scan returned, STA got an IP; or a browser was just granted the session pass (the first connection after power-up). A browser whose stored pass is accepted gets no blink |
+| `FAIL_AUTH`  | Double yellow blink | ~400 ms (one-shot) | WiFi connect failed with an auth-related reason code (wrong password, EAPOL timeout, etc.); or the board refused a browser's AUTH (wrong pass, or the connect window was closed) |
 | `FAIL`       | Double red blink | ~400 ms (one-shot) | Any other operation failure (no AP found, set\_config failed, init failed) |
 
 After a one-shot indication finishes, the LED reverts to whatever the
@@ -123,8 +123,8 @@ If the LED is...
 - **Solid green** → WiFi only — BLE has dropped, but WiFi is still up.
 - **Solid green with a cyan blip per second** → AP listening, no BLE.
 - **Spinning RGB at low intensity** → The firmware is actively scanning or connecting WiFi.
-- **Double white blink** → Last operation succeeded.
-- **Double yellow blink** → Last WiFi connect failed: bad credentials.
+- **Double white blink** → Last operation succeeded, or a browser was just granted the session pass.
+- **Double yellow blink** → Last WiFi connect failed (bad credentials), or the board just refused a browser.
 - **Double red blink** → Last WiFi operation failed for some other reason.
 - **Slow red blink (~2 Hz)** → Fatal init error. Power-cycle the board and check serial logs.
 - **Magenta blip every 5 seconds (overlaid)** → Host has the HID device mounted and is ready to receive reports.
@@ -153,6 +153,9 @@ A board with no LED at all shows none of this, but every board prints
 - `firmware/main/wifi_proxy.c` — calls `led_status_indicate(WORKING)` /
   `(SUCCESS|FAIL|FAIL_AUTH)` from the scan and connect paths, and
   maintains the AP-client count consumed by the base layer.
+- `firmware/main/main.c` also calls `led_status_indicate(SUCCESS)` when it
+  grants a session pass and `led_status_indicate(FAIL_AUTH)` when it refuses
+  an AUTH; an accepted stored pass shows nothing.
 - `firmware/main/main.c` — the main loop calls
   `led_status_set_window(...)`, then `led_status_set_link(...)` and
   `led_status_set_hid_mounted(...)`, every ~200 ms with fresh state, so the

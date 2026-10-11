@@ -69,10 +69,9 @@ If the C64 Ultimate's firmware is modified to send CORS headers, or if you use a
 - A 16-byte random token is generated on first WiFi configuration
 - The token is stored in the browser (localStorage) and on the device (NVS)
 - All WiFi and HTTP proxy commands require the token
-- The token expires after approximately 60 device reboots without use (sliding expiration)
 - **Forget** clears the token and stored WiFi credentials from both sides
 - The board's WiFi settings belong to the browser that set them up. The board changes or forgets them only for a request that carries that browser's token. A browser without the token (another browser, or cleared site data) cannot change them.
-- After 60 power-ups in a row without a request that carries the valid token, the board erases the token and the saved WiFi credentials, and the next browser can set WiFi up again.
+- The board counts every start of the firmware (a BOOT-button mode switch is a start too). Any request that carries the valid token resets the count. At 60 starts without one, the board erases the token and the saved WiFi credentials, and the next browser can set WiFi up again.
 - Over BLE, WiFi and HTTP replies go only to a connection that has passed the [connect window](../README.md#connect-window-and-session-pass-protocol-2-firmware-140) check.
 
 ## File transfer
@@ -118,7 +117,7 @@ If the HTTP API is not connected, the **Ultimate** button falls back to sending 
 
 - Firmware 3.x required (tested with 3.14)
 - Boot protocol keyboard mode (mode 0) required — the C64 Ultimate only supports boot protocol HID
-- Press the BOOT button on the keeBLEr device to toggle between boot keyboard (mode 0) and composite keyboard+mouse (mode 1)
+- Press the BOOT button on the keeBLEr device to toggle between boot keyboard (mode 0) and composite keyboard+mouse (mode 1); changing the mode restarts the board, which opens a new 60-second connect window
 - See [C64 Ultimate USB Research](c64-ultimate-usb-research.md) for deep technical details
 
 ## Authentication
